@@ -31,7 +31,12 @@ void writeErrorMessage(const QString& message, wchar_t* buffer, int bufferCapaci
 
 inline OsmAndNativeMapWidget* widgetFromPointer(void* widgetPointer)
 {
-    return reinterpret_cast<OsmAndNativeMapWidget*>(widgetPointer);
+#ifdef Q_OS_MACOS
+    auto* host = static_cast<OsmAndNativeMapHost<OsmAndNativeMapWidget>*>(widgetPointer);
+    return host ? host->surface : nullptr;
+#else
+    return static_cast<OsmAndNativeMapWidget*>(widgetPointer);
+#endif
 }
 
 inline OsmAndSearchService* searchServiceFromPointer(void* servicePointer)
@@ -42,6 +47,17 @@ inline OsmAndSearchService* searchServiceFromPointer(void* servicePointer)
 
 extern "C"
 {
+// No instance is needed: callers must check before attaching a GL widget.
+// 0 = unknown, 1 = QOpenGLWidget, 2 = independent QOpenGLWindow.
+OSMAND_EXPORT int osmand_widget_surface_kind()
+{
+#ifdef Q_OS_MACOS
+    return 2;
+#else
+    return 1;
+#endif
+}
+
 OSMAND_EXPORT void* osmand_create_map_widget(
     void* parentWidgetPointer,
     const wchar_t* obfPath,
@@ -69,7 +85,12 @@ OSMAND_EXPORT void* osmand_create_map_widget(
         return nullptr;
     }
 
+#ifdef Q_OS_MACOS
+    return new OsmAndNativeMapHost<OsmAndNativeMapWidget>(
+        widget, reinterpret_cast<QWidget*>(parentWidgetPointer));
+#else
     return widget;
+#endif
 }
 
 OSMAND_EXPORT void* osmand_create_map_widget_deferred(
@@ -85,8 +106,14 @@ OSMAND_EXPORT void* osmand_create_map_widget_deferred(
         QString::fromWCharArray(stylePath ? stylePath : L""),
         nightMode != 0,
     };
-    return OsmAndNativeMapWidget::createDeferred(
+    auto* widget = OsmAndNativeMapWidget::createDeferred(
         configuration, reinterpret_cast<QWidget*>(parentWidgetPointer));
+#ifdef Q_OS_MACOS
+    return new OsmAndNativeMapHost<OsmAndNativeMapWidget>(
+        widget, reinterpret_cast<QWidget*>(parentWidgetPointer));
+#else
+    return widget;
+#endif
 }
 
 OSMAND_EXPORT int osmand_widget_initialize_resources(
@@ -113,7 +140,8 @@ OSMAND_EXPORT int osmand_widget_initialize_resources(
 
 OSMAND_EXPORT void* osmand_widget_get_event_target(void* widgetPointer)
 {
-    return static_cast<QWidget*>(widgetFromPointer(widgetPointer));
+    // Return the renderer, never the host's incidental native window handle.
+    return widgetFromPointer(widgetPointer);
 }
 
 OSMAND_EXPORT int osmand_widget_has_presented_frame(void* widgetPointer)
@@ -126,7 +154,7 @@ OSMAND_EXPORT int osmand_widget_has_presented_frame(void* widgetPointer)
 OSMAND_EXPORT void osmand_widget_cleanup(void* widgetPointer)
 {
     if (auto* widget = widgetFromPointer(widgetPointer))
-        widget->cleanupRenderer();
+        widget->shutdown();
 }
 
 OSMAND_EXPORT double osmand_widget_get_zoom(void* widgetPointer)

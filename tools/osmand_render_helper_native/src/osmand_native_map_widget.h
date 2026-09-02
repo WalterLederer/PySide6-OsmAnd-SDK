@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include <QOpenGLWidget>
+#include "osmand_native_map_surface.h"
 #include <QPointF>
 #include <QShowEvent>
 #include <QString>
@@ -23,7 +23,7 @@ namespace OsmAnd
     class MapRasterLayerProvider_Software;
 }
 
-class OsmAndNativeMapWidget final : public QOpenGLWidget
+class OsmAndNativeMapWidget final : public OsmAndNativeMapSurface
 {
 public:
     struct Configuration
@@ -51,12 +51,15 @@ public:
     bool hasPresentedFrame() const;
     bool initializeResources(QString& errorMessage);
     void cleanupRenderer();
+    void shutdown();
 
 protected:
     void initializeGL() override;
     void resizeGL(int width, int height) override;
     void paintGL() override;
+#ifndef Q_OS_MACOS
     void showEvent(QShowEvent* event) override;
+#endif
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -97,6 +100,8 @@ private:
     bool _symbolsSuspendedByInteraction = false;
     bool _captionDiagnosticsDumped = false;
     bool _firstFramePresented = false;
+    bool _framePendingPresentation = false;
+    bool _shutdown = false;
 
     std::shared_ptr<OsmAnd::MapStylesCollection> _stylesCollection;
     std::shared_ptr<OsmAnd::ObfsCollection> _obfsCollection;

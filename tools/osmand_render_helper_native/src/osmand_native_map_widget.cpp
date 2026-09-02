@@ -209,7 +209,7 @@ OsmAndNativeMapWidget* OsmAndNativeMapWidget::createDeferred(
 }
 
 OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration, QWidget* parent)
-    : QOpenGLWidget(parent)
+    : OsmAndNativeMapSurface(parent)
     , _configuration(configuration)
     , _interactionTimer(this)
 {
@@ -220,6 +220,7 @@ OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration,
 
     // Linux drivers can leave stale content with partial-damage compositing.
     // Keep a runtime switch: 1 => PartialUpdate (A), 0/default => NoPartialUpdate (B).
+#ifndef Q_OS_MACOS
 #if defined(Q_OS_LINUX)
     setUpdateBehavior(
         qEnvironmentVariableIntValue("IPHOTO_OSMAND_GL_PARTIAL_UPDATE") > 0
@@ -233,11 +234,21 @@ OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration,
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(640, 480);
+#endif
+    connect(this, &OsmAndNativeMapSurface::frameSwapped, this, [this] {
+        if (!_shutdown && _framePendingPresentation)
+        {
+            _firstFramePresented = true;
+            _framePendingPresentation = false;
+        }
+    });
 }
 
 OsmAndNativeMapWidget::~OsmAndNativeMapWidget()
 {
     cleanupRenderer();
+    if (context())
+        disconnect(context(), nullptr, this, nullptr);
     if (_resourcesReady)
         OsmAndCoreRuntime::instance().release();
 }
@@ -347,6 +358,7 @@ void OsmAndNativeMapWidget::resizeGL(int width, int height)
     requestFullUpdate();
 }
 
+#ifndef Q_OS_MACOS
 void OsmAndNativeMapWidget::showEvent(QShowEvent* event)
 {
     QOpenGLWidget::showEvent(event);
@@ -354,6 +366,7 @@ void OsmAndNativeMapWidget::showEvent(QShowEvent* event)
     syncRendererCamera(true);
     requestFullUpdate();
 }
+#endif
 
 void OsmAndNativeMapWidget::paintGL()
 {
@@ -382,7 +395,7 @@ void OsmAndNativeMapWidget::paintGL()
     if (_mapRenderer->prepareFrame())
     {
         _mapRenderer->renderFrame();
-        _firstFramePresented = true;
+        _framePendingPresentation = true;
     }
 
     if (!_mapRenderer->isIdle() || _mapRenderer->isFrameInvalidated())
@@ -398,12 +411,16 @@ void OsmAndNativeMapWidget::mousePressEvent(QMouseEvent* event)
         _dragging = true;
         _lastMousePosition = event->position();
         setCursor(Qt::ClosedHandCursor);
+#ifdef Q_OS_MACOS
+        requestActivate();
+#else
         setFocus(Qt::MouseFocusReason);
+#endif
         event->accept();
         return;
     }
 
-    QOpenGLWidget::mousePressEvent(event);
+    OsmAndNativeMapSurface::mousePressEvent(event);
 }
 
 void OsmAndNativeMapWidget::mouseMoveEvent(QMouseEvent* event)
@@ -419,7 +436,7 @@ void OsmAndNativeMapWidget::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
-    QOpenGLWidget::mouseMoveEvent(event);
+    OsmAndNativeMapSurface::mouseMoveEvent(event);
 }
 
 void OsmAndNativeMapWidget::mouseReleaseEvent(QMouseEvent* event)
@@ -433,7 +450,7 @@ void OsmAndNativeMapWidget::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
 
-    QOpenGLWidget::mouseReleaseEvent(event);
+    OsmAndNativeMapSurface::mouseReleaseEvent(event);
 }
 
 void OsmAndNativeMapWidget::wheelEvent(QWheelEvent* event)
@@ -441,7 +458,7 @@ void OsmAndNativeMapWidget::wheelEvent(QWheelEvent* event)
     const auto delta = event->angleDelta().y();
     if (delta == 0)
     {
-        QOpenGLWidget::wheelEvent(event);
+        OsmAndNativeMapSurface::wheelEvent(event);
         return;
     }
 
@@ -515,11 +532,14 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
         _locale = QStringLiteral("en");
 
     _resourcesReady = true;
+    update();
     return true;
 }
 
 bool OsmAndNativeMapWidget::ensureRenderer()
 {
+    if (_shutdown)
+        return false;
     if (_mapRenderer)
         return true;
     if (!_resourcesReady)
@@ -878,11 +898,23 @@ void OsmAndNativeMapWidget::finishInteractiveRendering()
 
 void OsmAndNativeMapWidget::requestFullUpdate()
 {
+#ifdef Q_OS_MACOS
+    update();
+#else
     QOpenGLWidget::update(rect());
+#endif
+}
+
+void OsmAndNativeMapWidget::shutdown()
+{
+    _shutdown = true;
+    cleanupRenderer();
 }
 
 void OsmAndNativeMapWidget::cleanupRenderer()
 {
+    _firstFramePresented = false;
+    _framePendingPresentation = false;
     if (_interactionTimer.isActive())
         _interactionTimer.stop();
 
