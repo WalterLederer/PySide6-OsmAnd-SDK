@@ -201,6 +201,13 @@ OsmAndNativeMapWidget* OsmAndNativeMapWidget::create(
     return widget;
 }
 
+OsmAndNativeMapWidget* OsmAndNativeMapWidget::createDeferred(
+    const Configuration& configuration,
+    QWidget* parent)
+{
+    return new OsmAndNativeMapWidget(configuration, parent);
+}
+
 OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration, QWidget* parent)
     : QOpenGLWidget(parent)
     , _configuration(configuration)
@@ -320,10 +327,15 @@ bool OsmAndNativeMapWidget::projectLonLat(double longitude, double latitude, QPo
     return true;
 }
 
+bool OsmAndNativeMapWidget::hasPresentedFrame() const
+{
+    return _firstFramePresented;
+}
+
 void OsmAndNativeMapWidget::initializeGL()
 {
     connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &OsmAndNativeMapWidget::cleanupRenderer, Qt::DirectConnection);
-    if (!ensureRenderer() && _initError.isEmpty())
+    if (_resourcesReady && !ensureRenderer() && _initError.isEmpty())
         _initError = QStringLiteral("Failed to initialize the native OsmAnd renderer");
 }
 
@@ -368,7 +380,10 @@ void OsmAndNativeMapWidget::paintGL()
 
     _mapRenderer->update();
     if (_mapRenderer->prepareFrame())
+    {
         _mapRenderer->renderFrame();
+        _firstFramePresented = true;
+    }
 
     if (!_mapRenderer->isIdle() || _mapRenderer->isFrameInvalidated())
         requestFullUpdate();
@@ -464,6 +479,8 @@ void OsmAndNativeMapWidget::wheelEvent(QWheelEvent* event)
 
 bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
 {
+    if (_resourcesReady)
+        return true;
     if (!QFileInfo::exists(_configuration.obfPath))
     {
         errorMessage = QStringLiteral("OBF file does not exist: %1").arg(_configuration.obfPath);
@@ -604,6 +621,7 @@ bool OsmAndNativeMapWidget::ensureRenderer()
 
     _minZoomLevel = std::max(kDefaultMinZoom, static_cast<double>(_mapRenderer->getMinZoomLevel()));
     _maxZoomLevel = std::max(_minZoomLevel, static_cast<double>(_mapRenderer->getMaxZoomLevel()));
+    _initError.clear();
     _defaultZoomLevel = std::clamp(kDefaultZoom, _minZoomLevel, _maxZoomLevel);
     _zoomLevel = std::clamp(_zoomLevel, _minZoomLevel, _maxZoomLevel);
     _mapRenderer->setDetailedDistance(kStableDetailedDistance, true);
