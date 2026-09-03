@@ -34,27 +34,6 @@ There are currently two practical ways to use the SDK.
 
 ### 2.1 `NativeOsmAndWidget`
 
-Resource initialization is eager by default, including in the preview app. Embedding
-clients that need to attach a surface before showing their window can explicitly
-pass `defer_initialization=True`, connect `firstFramePresented`, attach the widget,
-and call `start_deferred_content()` after showing the window. `prepare_surface()`
-is a no-op because construction already attaches the native surface.
-
-The deferred start is idempotent and raises `TileLoadingError` on resource failure;
-the embedding client owns any fallback UI. Older native libraries without the
-new deferred exports retain eager creation. First-frame notifications use the
-native renderer's readiness query when available, otherwise the actual rendering
-surface's `frameSwapped` signal. `hide()`/`show()` reuse the surface; `shutdown()`
-is terminal and idempotent. Rebuild the native widget library to expose the new
-deferred creation, resource initialization, first-frame query, and cleanup exports.
-
-Run the lifecycle tests from the repository root after installing `.[dev]`:
-
-```sh
-QT_QPA_PLATFORM=offscreen PYTHONPATH=src python -m pytest -q tests
-```
-
-
 This is the native C++ OsmAnd Qt map widget hosted inside PySide6 through a small shared-library bridge.
 
 Characteristics:

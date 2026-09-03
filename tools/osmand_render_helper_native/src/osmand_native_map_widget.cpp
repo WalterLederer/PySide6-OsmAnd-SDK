@@ -201,15 +201,8 @@ OsmAndNativeMapWidget* OsmAndNativeMapWidget::create(
     return widget;
 }
 
-OsmAndNativeMapWidget* OsmAndNativeMapWidget::createDeferred(
-    const Configuration& configuration,
-    QWidget* parent)
-{
-    return new OsmAndNativeMapWidget(configuration, parent);
-}
-
 OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration, QWidget* parent)
-    : OsmAndNativeMapSurface(parent)
+    : QOpenGLWidget(parent)
     , _configuration(configuration)
     , _interactionTimer(this)
 {
@@ -220,7 +213,6 @@ OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration,
 
     // Linux drivers can leave stale content with partial-damage compositing.
     // Keep a runtime switch: 1 => PartialUpdate (A), 0/default => NoPartialUpdate (B).
-#ifndef Q_OS_MACOS
 #if defined(Q_OS_LINUX)
     setUpdateBehavior(
         qEnvironmentVariableIntValue("IPHOTO_OSMAND_GL_PARTIAL_UPDATE") > 0
@@ -234,21 +226,11 @@ OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration,
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(640, 480);
-#endif
-    connect(this, &OsmAndNativeMapSurface::frameSwapped, this, [this] {
-        if (!_shutdown && _framePendingPresentation)
-        {
-            _firstFramePresented = true;
-            _framePendingPresentation = false;
-        }
-    });
 }
 
 OsmAndNativeMapWidget::~OsmAndNativeMapWidget()
 {
     cleanupRenderer();
-    if (context())
-        disconnect(context(), nullptr, this, nullptr);
     if (_resourcesReady)
         OsmAndCoreRuntime::instance().release();
 }
@@ -338,15 +320,10 @@ bool OsmAndNativeMapWidget::projectLonLat(double longitude, double latitude, QPo
     return true;
 }
 
-bool OsmAndNativeMapWidget::hasPresentedFrame() const
-{
-    return _firstFramePresented;
-}
-
 void OsmAndNativeMapWidget::initializeGL()
 {
     connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &OsmAndNativeMapWidget::cleanupRenderer, Qt::DirectConnection);
-    if (_resourcesReady && !ensureRenderer() && _initError.isEmpty())
+    if (!ensureRenderer() && _initError.isEmpty())
         _initError = QStringLiteral("Failed to initialize the native OsmAnd renderer");
 }
 
@@ -358,7 +335,6 @@ void OsmAndNativeMapWidget::resizeGL(int width, int height)
     requestFullUpdate();
 }
 
-#ifndef Q_OS_MACOS
 void OsmAndNativeMapWidget::showEvent(QShowEvent* event)
 {
     QOpenGLWidget::showEvent(event);
@@ -366,7 +342,6 @@ void OsmAndNativeMapWidget::showEvent(QShowEvent* event)
     syncRendererCamera(true);
     requestFullUpdate();
 }
-#endif
 
 void OsmAndNativeMapWidget::paintGL()
 {
@@ -393,10 +368,7 @@ void OsmAndNativeMapWidget::paintGL()
 
     _mapRenderer->update();
     if (_mapRenderer->prepareFrame())
-    {
         _mapRenderer->renderFrame();
-        _framePendingPresentation = true;
-    }
 
     if (!_mapRenderer->isIdle() || _mapRenderer->isFrameInvalidated())
         requestFullUpdate();
@@ -411,16 +383,12 @@ void OsmAndNativeMapWidget::mousePressEvent(QMouseEvent* event)
         _dragging = true;
         _lastMousePosition = event->position();
         setCursor(Qt::ClosedHandCursor);
-#ifdef Q_OS_MACOS
-        requestActivate();
-#else
         setFocus(Qt::MouseFocusReason);
-#endif
         event->accept();
         return;
     }
 
-    OsmAndNativeMapSurface::mousePressEvent(event);
+    QOpenGLWidget::mousePressEvent(event);
 }
 
 void OsmAndNativeMapWidget::mouseMoveEvent(QMouseEvent* event)
@@ -436,7 +404,7 @@ void OsmAndNativeMapWidget::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
-    OsmAndNativeMapSurface::mouseMoveEvent(event);
+    QOpenGLWidget::mouseMoveEvent(event);
 }
 
 void OsmAndNativeMapWidget::mouseReleaseEvent(QMouseEvent* event)
@@ -450,7 +418,7 @@ void OsmAndNativeMapWidget::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
 
-    OsmAndNativeMapSurface::mouseReleaseEvent(event);
+    QOpenGLWidget::mouseReleaseEvent(event);
 }
 
 void OsmAndNativeMapWidget::wheelEvent(QWheelEvent* event)
@@ -458,7 +426,7 @@ void OsmAndNativeMapWidget::wheelEvent(QWheelEvent* event)
     const auto delta = event->angleDelta().y();
     if (delta == 0)
     {
-        OsmAndNativeMapSurface::wheelEvent(event);
+        QOpenGLWidget::wheelEvent(event);
         return;
     }
 
@@ -496,8 +464,6 @@ void OsmAndNativeMapWidget::wheelEvent(QWheelEvent* event)
 
 bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
 {
-    if (_resourcesReady)
-        return true;
     if (!QFileInfo::exists(_configuration.obfPath))
     {
         errorMessage = QStringLiteral("OBF file does not exist: %1").arg(_configuration.obfPath);
@@ -532,14 +498,11 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
         _locale = QStringLiteral("en");
 
     _resourcesReady = true;
-    update();
     return true;
 }
 
 bool OsmAndNativeMapWidget::ensureRenderer()
 {
-    if (_shutdown)
-        return false;
     if (_mapRenderer)
         return true;
     if (!_resourcesReady)
@@ -641,7 +604,6 @@ bool OsmAndNativeMapWidget::ensureRenderer()
 
     _minZoomLevel = std::max(kDefaultMinZoom, static_cast<double>(_mapRenderer->getMinZoomLevel()));
     _maxZoomLevel = std::max(_minZoomLevel, static_cast<double>(_mapRenderer->getMaxZoomLevel()));
-    _initError.clear();
     _defaultZoomLevel = std::clamp(kDefaultZoom, _minZoomLevel, _maxZoomLevel);
     _zoomLevel = std::clamp(_zoomLevel, _minZoomLevel, _maxZoomLevel);
     _mapRenderer->setDetailedDistance(kStableDetailedDistance, true);
@@ -898,23 +860,11 @@ void OsmAndNativeMapWidget::finishInteractiveRendering()
 
 void OsmAndNativeMapWidget::requestFullUpdate()
 {
-#ifdef Q_OS_MACOS
-    update();
-#else
     QOpenGLWidget::update(rect());
-#endif
-}
-
-void OsmAndNativeMapWidget::shutdown()
-{
-    _shutdown = true;
-    cleanupRenderer();
 }
 
 void OsmAndNativeMapWidget::cleanupRenderer()
 {
-    _firstFramePresented = false;
-    _framePendingPresentation = false;
     if (_interactionTimer.isActive())
         _interactionTimer.stop();
 

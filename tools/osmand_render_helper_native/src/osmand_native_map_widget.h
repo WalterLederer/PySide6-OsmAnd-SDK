@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include "osmand_native_map_surface.h"
+#include <QOpenGLWidget>
 #include <QPointF>
 #include <QShowEvent>
 #include <QString>
@@ -23,7 +23,7 @@ namespace OsmAnd
     class MapRasterLayerProvider_Software;
 }
 
-class OsmAndNativeMapWidget final : public OsmAndNativeMapSurface
+class OsmAndNativeMapWidget final : public QOpenGLWidget
 {
 public:
     struct Configuration
@@ -35,7 +35,6 @@ public:
     };
 
     static OsmAndNativeMapWidget* create(const Configuration& configuration, QWidget* parent, QString& errorMessage);
-    static OsmAndNativeMapWidget* createDeferred(const Configuration& configuration, QWidget* parent);
 
     ~OsmAndNativeMapWidget() override;
 
@@ -48,18 +47,12 @@ public:
     void setCenterLonLat(double longitude, double latitude);
     QPointF centerLonLat() const;
     bool projectLonLat(double longitude, double latitude, QPointF& outScreenPoint) const;
-    bool hasPresentedFrame() const;
-    bool initializeResources(QString& errorMessage);
-    void cleanupRenderer();
-    void shutdown();
 
 protected:
     void initializeGL() override;
     void resizeGL(int width, int height) override;
     void paintGL() override;
-#ifndef Q_OS_MACOS
     void showEvent(QShowEvent* event) override;
-#endif
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -68,6 +61,7 @@ protected:
 private:
     explicit OsmAndNativeMapWidget(const Configuration& configuration, QWidget* parent = nullptr);
 
+    bool initializeResources(QString& errorMessage);
     bool ensureRenderer();
     void maybeDumpCaptionDiagnostics();
     void syncRendererViewport(bool forcedUpdate = false);
@@ -75,6 +69,7 @@ private:
     void beginInteractiveRendering();
     void scheduleInteractiveRenderingFinish();
     void finishInteractiveRendering();
+    void cleanupRenderer();
     void requestFullUpdate();
     void wrapCenter();
     double worldSize() const;
@@ -99,9 +94,6 @@ private:
     bool _interactiveRendering = false;
     bool _symbolsSuspendedByInteraction = false;
     bool _captionDiagnosticsDumped = false;
-    bool _firstFramePresented = false;
-    bool _framePendingPresentation = false;
-    bool _shutdown = false;
 
     std::shared_ptr<OsmAnd::MapStylesCollection> _stylesCollection;
     std::shared_ptr<OsmAnd::ObfsCollection> _obfsCollection;
