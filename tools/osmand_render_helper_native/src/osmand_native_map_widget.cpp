@@ -18,6 +18,7 @@
 #include <QMetaObject>
 #include <QMouseEvent>
 #include <QOpenGLContext>
+#include <QImage>
 #include <QOpenGLFunctions>
 #include <QPointer>
 #include <QStandardPaths>
@@ -318,6 +319,64 @@ bool OsmAndNativeMapWidget::projectLonLat(double longitude, double latitude, QPo
 
     outScreenPoint = QPointF(screenPoint.x, screenPoint.y);
     return true;
+}
+
+bool OsmAndNativeMapWidget::grabFrameRgba(
+    QByteArray& pixelData, int& frameWidth, int& frameHeight, int& frameStride,
+    bool& rendererIdle, bool& frameInvalidated, QString& errorMessage)
+{
+    pixelData.clear();
+    frameWidth = 0;
+    frameHeight = 0;
+    frameStride = 0;
+    rendererIdle = false;
+    frameInvalidated = true;
+
+    if (QThread::currentThread() != thread())
+    {
+        errorMessage = QStringLiteral("Framebuffer capture must run on the widget GUI thread");
+        return false;
+    }
+    if (!isValid() || !context())
+    {
+        errorMessage = QStringLiteral("OpenGL widget has no valid context; show the widget before capture");
+        return false;
+    }
+    if (!_mapRenderer || !_mapRenderer->isRenderingInitialized())
+    {
+        errorMessage = _initError.isEmpty()
+            ? QStringLiteral("AtlasMapRenderer is not initialized")
+            : _initError;
+        return false;
+    }
+
+    // Force a synchronous QWidget paint pass before reading the widget FBO.
+    // Atlas resource/symbol work can still be asynchronous; the two state flags
+    // below let the caller distinguish a settled frame from an intermediate one.
+    repaint();
+    const auto frame = grabFramebuffer();
+    if (frame.isNull())
+    {
+        errorMessage = QStringLiteral("QOpenGLWidget returned an empty framebuffer");
+        return false;
+    }
+
+    const auto rgbaFrame = frame.convertToFormat(QImage::Format_RGBA8888);
+    if (rgbaFrame.isNull() || rgbaFrame.sizeInBytes() <= 0)
+    {
+        errorMessage = QStringLiteral("Failed to convert framebuffer to RGBA8");
+        return false;
+    }
+
+    frameWidth = rgbaFrame.width();
+    frameHeight = rgbaFrame.height();
+    frameStride = rgbaFrame.bytesPerLine();
+    pixelData = QByteArray(
+        reinterpret_cast<const char*>(rgbaFrame.constBits()),
+        static_cast<qsizetype>(rgbaFrame.sizeInBytes()));
+    rendererIdle = _mapRenderer->isIdle();
+    frameInvalidated = _mapRenderer->isFrameInvalidated();
+    return !pixelData.isEmpty();
 }
 
 void OsmAndNativeMapWidget::initializeGL()
