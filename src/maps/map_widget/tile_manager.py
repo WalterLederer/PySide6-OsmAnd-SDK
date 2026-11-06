@@ -210,6 +210,32 @@ class TileManager(QObject):
         self._schedule_queue_processing()
 
     # ------------------------------------------------------------------
+    def reprioritize(self, priorities: dict[TileKey, TilePriority]) -> None:
+        """Keep queued work aligned with the latest viewport.
+
+        In-flight jobs are allowed to finish, but queued tiles that have left
+        the requested viewport are dropped and current queued tiles receive
+        their latest centre-first priority.
+        """
+
+        if self._is_shutdown:
+            return
+
+        for tile_key in tuple(self._queue_tokens):
+            if tile_key not in priorities:
+                self._queue_tokens.pop(tile_key, None)
+                if self._pending_generations.get(tile_key) == self._generation:
+                    self._pending_generations.pop(tile_key, None)
+
+        for tile_key, priority in priorities.items():
+            if (
+                self._pending_generations.get(tile_key) == self._generation
+                and tile_key in self._queue_tokens
+            ):
+                self._enqueue(tile_key, self._generation, priority)
+
+    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
     def _enqueue(
         self,
         tile_key: TileKey,
