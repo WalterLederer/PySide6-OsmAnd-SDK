@@ -112,7 +112,6 @@ class OsmAndRasterBackend:
                 self._render_tile_to_cache(z, x, y, cache_path)
                 break
             except TileBackendUnavailableError:
-                self._remove_partial_cache_file(cache_path)
                 if attempt >= 1:
                     raise
                 LOGGER.warning(
@@ -335,8 +334,36 @@ class OsmAndRasterBackend:
         image = self._communicate_render(
             process, request, request_id=request_id, timeout_ms=DEFAULT_HELPER_RENDER_TIMEOUT_MS
         )
-        if not image.save(str(cache_path), "PNG"):
-            raise TileRenderError(f"Unable to save RGBA tile to cache file '{cache_path}'")
+        # Write to a unique temporary file in the same directory. The final
+        # rename is atomic on the same filesystem, so readers can only observe
+        # the previous complete tile or the newly completed PNG.
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix=f".{cache_path.stem}.",
+                suffix=".tmp",
+                dir=cache_path.parent,
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+
+            if not image.save(str(temporary_path), "PNG"):
+                raise TileRenderError(
+                    f"Unable to save RGBA tile to temporary cache file '{temporary_path}'"
+                )
+
+            os.replace(temporary_path, cache_path)
+            temporary_path = None
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except OSError:
+                    LOGGER.debug(
+                        "Failed to remove temporary cache file '%s'",
+                        temporary_path,
+                        exc_info=True,
+                    )
 
     def _discard_process(self, process: QProcess) -> None:
         if self._process is process:
