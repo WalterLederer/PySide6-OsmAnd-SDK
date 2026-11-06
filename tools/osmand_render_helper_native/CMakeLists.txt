@@ -172,6 +172,14 @@ add_executable(osmand_atlas_frame_poc
     src/atlas_frame_poc.cpp
 )
 
+# Persistent Atlas process. Kept separate from the existing tile helper.
+add_executable(osmand_atlas_render_helper
+    ${OSMAND_COMMON_SOURCES}
+    src/osmand_native_map_widget.cpp
+    src/osmand_native_map_widget.h
+    src/atlas_render_helper.cpp
+)
+
 target_link_libraries(osmand_render_helper
     PRIVATE
         OsmAndCoreTools_static
@@ -217,6 +225,26 @@ target_link_options(osmand_atlas_frame_poc
     PRIVATE
         "-Wl,-u,DWriteCreateFactory"
 )
+
+target_link_libraries(osmand_atlas_render_helper
+    PRIVATE
+        OsmAndCoreTools_static
+        Qt6::Core
+        Qt6::Network
+        Qt6::Gui
+        Qt6::Widgets
+        Qt6::OpenGL
+        Qt6::OpenGLWidgets
+        dwrite
+)
+target_link_options(osmand_atlas_render_helper
+    PRIVATE
+        "-Wl,-u,DWriteCreateFactory"
+)
+target_include_directories(osmand_atlas_render_helper
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
 target_include_directories(osmand_atlas_frame_poc
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -249,6 +277,15 @@ set_target_properties(osmand_render_helper PROPERTIES
 
 set_target_properties(osmand_atlas_frame_poc PROPERTIES
     OUTPUT_NAME "osmand_atlas_frame_poc"
+    RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${DIST_DIR}"
+)
+
+set_target_properties(osmand_atlas_render_helper PROPERTIES
+    OUTPUT_NAME "osmand_atlas_render_helper"
     RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${DIST_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${DIST_DIR}"
@@ -303,6 +340,15 @@ if(CMAKE_TARGET_OS STREQUAL "windows")
             COMMAND_EXPAND_LISTS
             VERBATIM
         )
+        add_custom_command(TARGET osmand_atlas_render_helper POST_BUILD
+            COMMAND "${_windeployqt}"
+                --no-translations
+                --no-system-d3d-compiler
+                --no-opengl-sw
+                "$<TARGET_FILE:osmand_atlas_render_helper>"
+            COMMAND_EXPAND_LISTS
+            VERBATIM
+        )
     endif()
 
     foreach(_mingw_runtime IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
@@ -320,6 +366,12 @@ if(CMAKE_TARGET_OS STREQUAL "windows")
                 VERBATIM
             )
             add_custom_command(TARGET osmand_atlas_frame_poc POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${MINGW_ROOT}/bin/${_mingw_runtime}"
+                    "${_helper_dist_dir}/${_mingw_runtime}"
+                VERBATIM
+            )
+            add_custom_command(TARGET osmand_atlas_render_helper POST_BUILD
                 COMMAND "${CMAKE_COMMAND}" -E copy_if_different
                     "${MINGW_ROOT}/bin/${_mingw_runtime}"
                     "${_helper_dist_dir}/${_mingw_runtime}"
