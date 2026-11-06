@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include <QByteArray>
 #include <QOpenGLWidget>
 #include <QPointF>
 #include <QShowEvent>
@@ -47,6 +48,8 @@ public:
     void setCenterLonLat(double longitude, double latitude);
     QPointF centerLonLat() const;
     bool projectLonLat(double longitude, double latitude, QPointF& outScreenPoint) const;
+    bool grabFrameRgba(QByteArray& pixelData, int& width, int& height, int& stride,
+        bool& rendererIdle, bool& frameInvalidated, QString& errorMessage);
 
 protected:
     void initializeGL() override;
