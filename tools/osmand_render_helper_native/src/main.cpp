@@ -1,9 +1,12 @@
 #include "file_system_core_resources_provider.h"
 
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <string>
+
+#include <QByteArray>
 
 #include <QDateTime>
 #include <QDir>
@@ -229,6 +232,55 @@ public:
         return true;
     }
 
+    bool renderTileRgba(
+        int z, int x, int y, double deviceScale,
+        QByteArray& pixelData, int& width, int& height, int& stride,
+        QString& errorMessage)
+    {
+        if (!_initialized) { errorMessage = QStringLiteral("helper was not initialized"); return false; }
+        if (z < 0 || z > static_cast<int>(OsmAnd::ZoomLevel::MaxZoomLevel)) {
+            errorMessage = QStringLiteral("zoom is out of range: %1").arg(z); return false;
+        }
+        const auto tileId = OsmAnd::TileId::fromXY(x, y);
+        const auto zoomLevel = static_cast<OsmAnd::ZoomLevel>(z);
+        const auto bbox31 = OsmAnd::Utilities::tileBoundingBox31(tileId, zoomLevel);
+        if (!ensureRenderPipeline(std::max(1.0, deviceScale), errorMessage)) return false;
+        width = static_cast<int>(_rasterSize);
+        height = static_cast<int>(_rasterSize);
+        stride = width * 4;
+
+        OsmAnd::MapPrimitivesProvider::Request request;
+        request.tileId = tileId;
+        request.zoom = zoomLevel;
+        request.detailedZoom = zoomLevel;
+        request.visibleArea31 = bbox31;
+        request.areaTime = QDateTime::currentMSecsSinceEpoch();
+        request.queryController = std::make_shared<OsmAnd::SimpleQueryController>();
+        std::shared_ptr<OsmAnd::MapPrimitivesProvider::Data> primitivesData;
+        if (!_primitivesProvider->obtainTiledPrimitives(request, primitivesData)) {
+            errorMessage = QStringLiteral("Failed to obtain map primitives for tile rendering"); return false;
+        }
+
+        SkBitmap bitmap;
+        if (!bitmap.tryAllocPixels(SkImageInfo::MakeN32Premul(width, height))) {
+            errorMessage = QStringLiteral("Failed to allocate bitmap for tile rendering"); return false;
+        }
+        SkCanvas canvas(bitmap);
+        canvas.clear(_mapPresentationEnvironment->getDefaultBackgroundColor(zoomLevel).toSkColor());
+        if (primitivesData && primitivesData->primitivisedObjects) {
+            _rasterizer->rasterize(bbox31, primitivesData->primitivisedObjects, canvas, true,
+                nullptr, nullptr, request.queryController);
+        }
+
+        pixelData.resize(stride * height);
+        const auto rgbaInfo = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+        if (!bitmap.readPixels(rgbaInfo, pixelData.data(), static_cast<size_t>(stride))) {
+            pixelData.clear();
+            errorMessage = QStringLiteral("Failed to convert rendered tile to RGBA8"); return false;
+        }
+        return true;
+    }
+
     bool dumpTileCaptions(
         int z,
         int x,
@@ -407,6 +459,32 @@ private:
     unsigned int _rasterSize = kReferenceTileSize;
     bool _initialized = false;
 };
+
+void appendLittleEndian(QByteArray& buffer, quint64 value, int byteCount)
+{
+    for (int index = 0; index < byteCount; ++index)
+        buffer.append(static_cast<char>((value >> (index * 8)) & 0xff));
+}
+
+void writeBinaryRenderResponse(quint32 requestId, quint32 status, quint32 width,
+    quint32 height, quint32 stride, quint32 pixelFormat, const QByteArray& payload)
+{
+    QByteArray header;
+    header.reserve(40);
+    header.append("OSMR", 4);
+    appendLittleEndian(header, 1, 2);
+    appendLittleEndian(header, 40, 2);
+    appendLittleEndian(header, status, 4);
+    appendLittleEndian(header, requestId, 4);
+    appendLittleEndian(header, width, 4);
+    appendLittleEndian(header, height, 4);
+    appendLittleEndian(header, stride, 4);
+    appendLittleEndian(header, pixelFormat, 4);
+    appendLittleEndian(header, static_cast<quint64>(payload.size()), 8);
+    std::cout.write(header.constData(), header.size());
+    if (!payload.isEmpty()) std::cout.write(payload.constData(), payload.size());
+    std::cout.flush();
+}
 
 QJsonObject handleInitCommand(const QJsonObject& command, OsmAndRenderHelperSession& session)
 {
@@ -600,10 +678,17 @@ int runOneShotCaptionDump(const QStringList& arguments)
 }
 
 #include <QCoreApplication>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
+#ifdef _WIN32
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     OsmAnd::Logger::get()->setSeverityLevelThreshold(static_cast<OsmAnd::LogSeverityLevel>(999));
     const auto arguments = app.arguments();
 
@@ -632,19 +717,34 @@ int main(int argc, char** argv)
         const auto document = QJsonDocument::fromJson(line, &parseError);
         QJsonObject response;
         bool shouldExit = false;
-
-        if (parseError.error != QJsonParseError::NoError || !document.isObject())
-        {
+        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
             response = makeErrorResponse(QStringLiteral("invalid JSON request"));
+            std::cout << QJsonDocument(response).toJson(QJsonDocument::Compact).constData() << std::endl;
+            continue;
         }
-        else
-        {
-            response = dispatchCommand(document.object(), session, shouldExit);
+        const auto command = document.object();
+        if (command.value(QStringLiteral("command")).toString() == QLatin1String("render")) {
+            const auto requestId = static_cast<quint32>(command.value(QStringLiteral("request_id")).toVariant().toULongLong());
+            QByteArray pixels;
+            int width = 0, height = 0, stride = 0;
+            QString errorMessage;
+            const auto ok = session.renderTileRgba(
+                command.value(QStringLiteral("z")).toInt(-1),
+                command.value(QStringLiteral("x")).toInt(),
+                command.value(QStringLiteral("y")).toInt(),
+                command.value(QStringLiteral("device_scale")).toDouble(1.0),
+                pixels, width, height, stride, errorMessage);
+            const auto payload = ok ? pixels : errorMessage.toUtf8();
+            writeBinaryRenderResponse(requestId, ok ? 0u : 1u,
+                ok ? static_cast<quint32>(width) : 0u,
+                ok ? static_cast<quint32>(height) : 0u,
+                ok ? static_cast<quint32>(stride) : 0u,
+                ok ? 1u : 0u, payload);
+            continue;
         }
-
+        response = dispatchCommand(command, session, shouldExit);
         std::cout << QJsonDocument(response).toJson(QJsonDocument::Compact).constData() << std::endl;
-        if (shouldExit)
-            break;
+        if (shouldExit) break;
     }
 
     session.shutdown();
