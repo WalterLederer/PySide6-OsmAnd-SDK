@@ -119,8 +119,6 @@ class MapWidgetController:
         requested_source = self._resolve_source_spec(package_root, map_source=map_source)
 
         self._tile_backend = OsmAndRasterBackend(requested_source)
-        self._backend_metadata = self._tile_backend.probe()
-
         self._tile_manager = TileManager(
             self._tile_backend,
             cache_limit=256,
@@ -128,6 +126,7 @@ class MapWidgetController:
             backend_factory=lambda: OsmAndRasterBackend(requested_source),
             parent=self._widget,
         )
+        self._backend_metadata = self._tile_manager.metadata
         self._renderer = MapRenderer(
             tile_manager=self._tile_manager,
             tile_size=self.TILE_SIZE,
