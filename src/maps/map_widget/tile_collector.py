@@ -103,6 +103,11 @@ def request_tiles(
 ) -> None:
     """Submit missing tiles with their centre-first priority."""
 
+    priority_by_tile = {
+        tile_key: priority for priority, tile_key in tiles_to_request
+    }
+    tile_manager.reprioritize(priority_by_tile)
+
     for priority, tile_key in sorted(tiles_to_request, key=lambda item: item[0]):
         tile_manager.ensure_tile(tile_key, priority=priority)
 
