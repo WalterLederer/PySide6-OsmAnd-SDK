@@ -37,8 +37,18 @@ class _TileLoaderWorker(QObject):
         self._backend = tile_backend
         self.process_requested.connect(self.process_tile)
         self.shutdown_requested.connect(self.shutdown)
-        self.clear_requested.connect(self._backend.clear_cache)
-        self.device_scale_requested.connect(self._backend.set_device_scale)
+        self.clear_requested.connect(self.clear_backend_cache)
+        self.device_scale_requested.connect(self.set_backend_device_scale)
+
+    def clear_backend_cache(self) -> None:
+        """Clear backend-owned caches in this worker's thread."""
+
+        self._backend.clear_cache()
+
+    def set_backend_device_scale(self, scale: float) -> None:
+        """Update backend rendering scale in this worker's thread."""
+
+        self._backend.set_device_scale(scale)
 
     def process_tile(self, job: object) -> None:
         """Load one tile; this method runs only in the worker thread."""
