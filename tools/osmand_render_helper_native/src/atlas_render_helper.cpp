@@ -189,6 +189,9 @@ int main(int argc, char* argv[])
         while (std::getline(std::cin, line))
         {
             const auto commandLine = QString::fromUtf8(line.data(), static_cast<qsizetype>(line.size()));
+            const auto parsedLine = QJsonDocument::fromJson(commandLine.toUtf8());
+            const bool quitRequested = parsedLine.isObject()
+                && parsedLine.object().value(QStringLiteral("type")).toString() == QStringLiteral("quit");
             QMetaObject::invokeMethod(&app, [&, commandLine]() {
                 QJsonParseError parseError;
                 const auto document = QJsonDocument::fromJson(commandLine.toUtf8(), &parseError);
@@ -263,6 +266,8 @@ int main(int argc, char* argv[])
                 widget->update();
                 captureTimer.start();
             }, Qt::QueuedConnection);
+            if (quitRequested)
+                break;
         }
 
         QMetaObject::invokeMethod(&app, [&app]() { app.quit(); }, Qt::QueuedConnection);
