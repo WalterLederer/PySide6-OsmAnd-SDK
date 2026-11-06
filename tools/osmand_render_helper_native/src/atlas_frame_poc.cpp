@@ -40,8 +40,11 @@ int main(int argc, char* argv[])
     }
 
     widget->resize(1280, 960);
-    widget->setCenterLonLat(longitude, latitude);
+    // Set zoom first: setCenterLonLat() clamps the center against the current
+    // zoom and viewport. At the default zoom, that can move Vienna toward the
+    // equator before the requested zoom is applied.
     widget->setZoomLevel(zoom);
+    widget->setCenterLonLat(longitude, latitude);
     widget->setWindowTitle(QStringLiteral("OsmAnd Atlas RGBA frame POC"));
     widget->show();
 
