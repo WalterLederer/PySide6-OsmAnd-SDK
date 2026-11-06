@@ -200,8 +200,7 @@ int main(int argc, char* argv[])
     widget->setMinimumSize(1, 1);
     widget->resize(1280, 960);
     widget->setWindowTitle(QStringLiteral("OsmAnd Atlas Render Helper"));
-    widget->setWindowFlag(Qt::Tool, true);
-    widget->move(-32000, -32000);
+    widget->move(100, 100);
     widget->setZoomLevel(13.0);
     widget->setCenterLonLat(16.3738, 48.2082);
     widget->show();

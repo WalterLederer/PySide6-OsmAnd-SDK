@@ -26,3 +26,6 @@ __pycache__/
 # Native build logs
 /tools/osmand_render_helper_native/*.log
 /plugin/
+/.vs
+/.gitignore
+/.gitignore
