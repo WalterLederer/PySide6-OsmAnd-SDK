@@ -76,7 +76,7 @@ class TileBackend(Protocol):
 class OsmAndRasterBackend:
     """Load map tiles through an external OsmAnd-compatible helper."""
 
-    CACHE_SCHEMA_VERSION = "2"
+    CACHE_SCHEMA_VERSION = "3"
     DEFAULT_METADATA = MapBackendMetadata(
         min_zoom=2.0,
         max_zoom=19.0,
