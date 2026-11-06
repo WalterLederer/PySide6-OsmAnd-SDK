@@ -1,9 +1,9 @@
 param(
-    [string]$QtRoot = "C:\Qt\6.10.1\mingw_64",
+    [string]$QtRoot = "C:\Qt\6.12.0\mingw_64",
     [string]$MinGWRoot = "C:\Qt\Tools\mingw1310_64",
     [ValidateSet("Debug", "Release", "RelWithDebInfo", "MinSizeRel")]
     [string]$BuildType = "Release",
-    [string]$CMakeExe = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+    [string]$CMakeExe = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
     [string]$Generator = "MinGW Makefiles",
     [string]$GitBashExe = "C:\Program Files\Git\bin\bash.exe"
 )
