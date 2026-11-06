@@ -70,7 +70,7 @@ int main(int argc, char* argv[])
             if (!widget->grabFrameRgba(
                     rgba, width, height, stride, rendererIdle, frameInvalidated, captureError))
             {
-                std::cerr << "RGBA capture failed: " << captureError.toStdString() << "\\n";
+                std::cerr << "RGBA capture failed: " << captureError.toStdString() << "\n";
                 captureTimer->stop();
                 app.exit(4);
                 return;
@@ -91,20 +91,20 @@ int main(int argc, char* argv[])
 
             if (!image.copy().save(outputPath, "PNG"))
             {
-                std::cerr << "Failed to save PNG: " << outputPath.toStdString() << "\\n";
+                std::cerr << "Failed to save PNG: " << outputPath.toStdString() << "\n";
                 app.exit(5);
                 return;
             }
 
             std::cout
-                << "PNG: " << outputPath.toStdString() << "\\n"
-                << "Size: " << width << " x " << height << "\\n"
-                << "Stride: " << stride << "\\n"
-                << "RGBA bytes: " << rgba.size() << "\\n"
-                << "Atlas idle: " << (rendererIdle ? "yes" : "no") << "\\n"
-                << "Frame invalidated: " << (frameInvalidated ? "yes" : "no") << "\\n"
-                << "Frame settled: " << (settled ? "yes" : "no") << "\\n"
-                << "Wait ms: " << captureElapsed->elapsed() << "\\n";
+                << "PNG: " << outputPath.toStdString() << "\n"
+                << "Size: " << width << " x " << height << "\n"
+                << "Stride: " << stride << "\n"
+                << "RGBA bytes: " << rgba.size() << "\n"
+                << "Atlas idle: " << (rendererIdle ? "yes" : "no") << "\n"
+                << "Frame invalidated: " << (frameInvalidated ? "yes" : "no") << "\n"
+                << "Frame settled: " << (settled ? "yes" : "no") << "\n"
+                << "Wait ms: " << captureElapsed->elapsed() << "\n";
 
             app.exit(settled ? 0 : 6);
         });
