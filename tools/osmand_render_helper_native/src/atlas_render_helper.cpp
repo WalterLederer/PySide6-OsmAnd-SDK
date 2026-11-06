@@ -16,6 +16,9 @@
 #include <thread>
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <io.h>
 #endif
@@ -343,5 +346,12 @@ int main(int argc, char* argv[])
         inputThread.join();
 
     delete widget;
+#ifdef _WIN32
+    if (g_protocolOutputHandle != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(g_protocolOutputHandle);
+        g_protocolOutputHandle = INVALID_HANDLE_VALUE;
+    }
+#endif
     return exitCode;
 }
