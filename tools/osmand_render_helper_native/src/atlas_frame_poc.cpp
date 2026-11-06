@@ -1,6 +1,7 @@
 #include "osmand_native_map_widget.h"
 
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QImage>
 #include <QTimer>
 
@@ -50,48 +51,64 @@ int main(int argc, char* argv[])
 
     QObject::connect(&app, &QCoreApplication::aboutToQuit, widget, &QObject::deleteLater);
 
-    // Let Atlas load vector data and asynchronously prepare symbols before capture.
-    QTimer::singleShot(6000, &app, [widget, outputPath = arguments.at(4), &app]() {
-        QByteArray rgba;
-        int width = 0;
-        int height = 0;
-        int stride = 0;
-        bool rendererIdle = false;
-        bool frameInvalidated = true;
-        QString captureError;
+    // Poll Atlas until it reports a settled frame. A fixed delay can capture
+    // the widget's clear color while asynchronous map/symbol work is still active.
+    auto* captureTimer = new QTimer(&app);
+    captureTimer->setInterval(250);
+    auto* captureElapsed = new QElapsedTimer();
+    captureElapsed->start();
+    QObject::connect(captureTimer, &QTimer::timeout, &app,
+        [widget, outputPath = arguments.at(4), &app, captureTimer, captureElapsed]() {
+            QByteArray rgba;
+            int width = 0;
+            int height = 0;
+            int stride = 0;
+            bool rendererIdle = false;
+            bool frameInvalidated = true;
+            QString captureError;
 
-        if (!widget->grabFrameRgba(
-                rgba, width, height, stride, rendererIdle, frameInvalidated, captureError))
-        {
-            std::cerr << "RGBA capture failed: " << captureError.toStdString() << "\n";
-            app.exit(4);
-            return;
-        }
+            if (!widget->grabFrameRgba(
+                    rgba, width, height, stride, rendererIdle, frameInvalidated, captureError))
+            {
+                std::cerr << "RGBA capture failed: " << captureError.toStdString() << "\\n";
+                captureTimer->stop();
+                app.exit(4);
+                return;
+            }
 
-        const QImage image(
-            reinterpret_cast<const uchar*>(rgba.constData()),
-            width,
-            height,
-            stride,
-            QImage::Format_RGBA8888);
+            const bool settled = rendererIdle && !frameInvalidated;
+            const bool timedOut = captureElapsed->elapsed() >= 30000;
+            if (!settled && !timedOut)
+                return;
 
-        if (!image.copy().save(outputPath, "PNG"))
-        {
-            std::cerr << "Failed to save PNG: " << outputPath.toStdString() << "\n";
-            app.exit(5);
-            return;
-        }
+            captureTimer->stop();
+            const QImage image(
+                reinterpret_cast<const uchar*>(rgba.constData()),
+                width,
+                height,
+                stride,
+                QImage::Format_RGBA8888);
 
-        std::cout
-            << "PNG: " << outputPath.toStdString() << "\n"
-            << "Size: " << width << " x " << height << "\n"
-            << "Stride: " << stride << "\n"
-            << "RGBA bytes: " << rgba.size() << "\n"
-            << "Atlas idle: " << (rendererIdle ? "yes" : "no") << "\n"
-            << "Frame invalidated: " << (frameInvalidated ? "yes" : "no") << "\n";
+            if (!image.copy().save(outputPath, "PNG"))
+            {
+                std::cerr << "Failed to save PNG: " << outputPath.toStdString() << "\\n";
+                app.exit(5);
+                return;
+            }
 
-        app.exit(0);
-    });
+            std::cout
+                << "PNG: " << outputPath.toStdString() << "\\n"
+                << "Size: " << width << " x " << height << "\\n"
+                << "Stride: " << stride << "\\n"
+                << "RGBA bytes: " << rgba.size() << "\\n"
+                << "Atlas idle: " << (rendererIdle ? "yes" : "no") << "\\n"
+                << "Frame invalidated: " << (frameInvalidated ? "yes" : "no") << "\\n"
+                << "Frame settled: " << (settled ? "yes" : "no") << "\\n"
+                << "Wait ms: " << captureElapsed->elapsed() << "\\n";
+
+            app.exit(settled ? 0 : 6);
+        });
+    captureTimer->start();
 
     return app.exec();
 }
