@@ -274,7 +274,7 @@ public:
 
         pixelData.resize(stride * height);
         const auto rgbaInfo = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
-        if (!bitmap.readPixels(rgbaInfo, pixelData.data(), static_cast<size_t>(stride))) {
+        if (!bitmap.readPixels(rgbaInfo, pixelData.data(), static_cast<size_t>(stride), 0, 0)) {
             pixelData.clear();
             errorMessage = QStringLiteral("Failed to convert rendered tile to RGBA8"); return false;
         }
