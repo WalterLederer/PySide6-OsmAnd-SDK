@@ -124,7 +124,7 @@ OSMAND_EXPORT int osmand_widget_get_frame_rgba(
 
     std::memcpy(outputBuffer, pixels.constData(), static_cast<size_t>(pixels.size()));
     if (errorBuffer && errorBufferCapacity > 0)
-        errorBuffer[0] = L'\\0';
+        errorBuffer[0] = L'\0';
     return 1;
 }
 
