@@ -6,6 +6,7 @@
 #include <cwchar>
 
 #include <QString>
+#include <QByteArray>
 #include <QWidget>
 
 // Cross-platform export macro
@@ -70,6 +71,61 @@ OSMAND_EXPORT void* osmand_create_map_widget(
     }
 
     return widget;
+}
+
+// Returns 1 on success, 2 when the caller's buffer is too small, and 0 on error.
+// On every call, width/height/stride/requiredBytes and renderer state are populated
+// when available. Call first with outputBuffer=nullptr and capacity=0 to query size.
+OSMAND_EXPORT int osmand_widget_get_frame_rgba(
+    void* widgetPointer,
+    unsigned char* outputBuffer,
+    int outputCapacity,
+    int* width,
+    int* height,
+    int* stride,
+    int* requiredBytes,
+    int* rendererIdle,
+    int* frameInvalidated,
+    wchar_t* errorBuffer,
+    int errorBufferCapacity)
+{
+    if (!width || !height || !stride || !requiredBytes || !rendererIdle || !frameInvalidated)
+    {
+        writeErrorMessage(QStringLiteral("frame output parameters are required"), errorBuffer, errorBufferCapacity);
+        return 0;
+    }
+
+    auto* widget = widgetFromPointer(widgetPointer);
+    if (!widget)
+    {
+        writeErrorMessage(QStringLiteral("widget pointer is null"), errorBuffer, errorBufferCapacity);
+        return 0;
+    }
+
+    QByteArray pixels;
+    QString errorMessage;
+    bool idle = false;
+    bool invalidated = true;
+    if (!widget->grabFrameRgba(pixels, *width, *height, *stride, idle, invalidated, errorMessage))
+    {
+        writeErrorMessage(errorMessage, errorBuffer, errorBufferCapacity);
+        return 0;
+    }
+
+    *requiredBytes = pixels.size();
+    *rendererIdle = idle ? 1 : 0;
+    *frameInvalidated = invalidated ? 1 : 0;
+    if (!outputBuffer || outputCapacity < pixels.size())
+    {
+        writeErrorMessage(QStringLiteral("RGBA buffer too small; required %1 bytes").arg(pixels.size()),
+            errorBuffer, errorBufferCapacity);
+        return 2;
+    }
+
+    std::memcpy(outputBuffer, pixels.constData(), static_cast<size_t>(pixels.size()));
+    if (errorBuffer && errorBufferCapacity > 0)
+        errorBuffer[0] = L'\\0';
+    return 1;
 }
 
 OSMAND_EXPORT double osmand_widget_get_zoom(void* widgetPointer)
