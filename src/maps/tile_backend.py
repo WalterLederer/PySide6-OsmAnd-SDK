@@ -262,7 +262,7 @@ class OsmAndRasterBackend:
     def _communicate_render(
         self, process: QProcess, payload: dict[str, object], *, request_id: int, timeout_ms: int
     ) -> QImage:
-        message = json.dumps(payload, ensure_ascii=True) + "\\n"
+        message = json.dumps(payload, ensure_ascii=True) + "\n"
         process.write(message.encode("utf8"))
         if not process.waitForBytesWritten(timeout_ms):
             self._discard_process(process)
