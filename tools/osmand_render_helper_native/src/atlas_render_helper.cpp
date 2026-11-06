@@ -15,6 +15,11 @@
 #include <string>
 #include <thread>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#endif
+
 namespace
 {
 constexpr int kFramePollIntervalMs = 100;
@@ -23,6 +28,62 @@ constexpr int kMaximumDimension = 8192;
 constexpr std::uint16_t kProtocolVersion = 1;
 constexpr std::uint16_t kHeaderSize = 40;
 constexpr std::uint32_t kPixelFormatRgba8 = 1;
+
+#ifdef _WIN32
+HANDLE g_protocolOutputHandle = INVALID_HANDLE_VALUE;
+
+bool initializeOutputChannels()
+{
+    std::fflush(stdout);
+    std::cout.flush();
+
+    const HANDLE originalOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    const HANDLE errorOutput = GetStdHandle(STD_ERROR_HANDLE);
+    if (originalOutput == nullptr || originalOutput == INVALID_HANDLE_VALUE
+        || errorOutput == nullptr || errorOutput == INVALID_HANDLE_VALUE)
+        return false;
+
+    if (!DuplicateHandle(
+            GetCurrentProcess(), originalOutput,
+            GetCurrentProcess(), &g_protocolOutputHandle,
+            0, FALSE, DUPLICATE_SAME_ACCESS))
+        return false;
+
+    if (!SetStdHandle(STD_OUTPUT_HANDLE, errorOutput)
+        || _dup2(_fileno(stderr), _fileno(stdout)) != 0)
+    {
+        CloseHandle(g_protocolOutputHandle);
+        g_protocolOutputHandle = INVALID_HANDLE_VALUE;
+        return false;
+    }
+
+    std::cout.rdbuf(std::cerr.rdbuf());
+    return true;
+}
+
+bool writeProtocolBytes(const void* data, std::size_t length)
+{
+    const auto* bytes = static_cast<const unsigned char*>(data);
+    while (length > 0)
+    {
+        const DWORD chunk = static_cast<DWORD>(
+            length > static_cast<std::size_t>(std::numeric_limits<DWORD>::max())
+                ? std::numeric_limits<DWORD>::max() : length);
+        DWORD written = 0;
+        if (!WriteFile(g_protocolOutputHandle, bytes, chunk, &written, nullptr) || written == 0)
+            return false;
+        bytes += written;
+        length -= written;
+    }
+    return true;
+}
+#else
+bool initializeOutputChannels() { return true; }
+bool writeProtocolBytes(const void* data, std::size_t length)
+{
+    return std::fwrite(data, 1, length, stdout) == length;
+}
+#endif
 
 void writeU16(std::array<unsigned char, kHeaderSize>& header, std::size_t offset, std::uint16_t value)
 {
@@ -66,7 +127,7 @@ void writeFrameHeader(
     writeU32(header, 28, pixelFormat);
     writeU64(header, 32, payloadLength);
 
-    std::fwrite(header.data(), 1, header.size(), stdout);
+    writeProtocolBytes(header.data(), header.size());
 }
 
 void writeError(std::uint32_t requestId, const QString& message)
@@ -74,7 +135,6 @@ void writeError(std::uint32_t requestId, const QString& message)
     std::cerr << "[atlas-helper] request " << requestId << ": "
               << message.toStdString() << std::endl;
     writeFrameHeader(1, requestId, 0, 0, 0, 0, 0);
-    std::fflush(stdout);
 }
 
 void writeRgbaFrame(
@@ -94,13 +154,18 @@ void writeRgbaFrame(
         static_cast<std::uint64_t>(rgba.size()));
 
     if (!rgba.isEmpty())
-        std::fwrite(rgba.constData(), 1, static_cast<std::size_t>(rgba.size()), stdout);
-    std::fflush(stdout);
+        writeProtocolBytes(rgba.constData(), static_cast<std::size_t>(rgba.size()));
 }
 }
 
 int main(int argc, char* argv[])
 {
+    if (!initializeOutputChannels())
+    {
+        std::cerr << "[atlas-helper] failed to separate protocol output from log output" << std::endl;
+        return 4;
+    }
+
     if (argc != 4)
     {
         std::cerr
