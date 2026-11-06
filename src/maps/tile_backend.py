@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import struct
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -93,6 +94,7 @@ class OsmAndRasterBackend:
         self._device_scale = 1.0
         self._process: QProcess | None = None
         self._cache_root: Path | None = None
+        self._next_request_id = 1
 
     def probe(self) -> MapBackendMetadata:
         self._validate_paths()
@@ -242,6 +244,65 @@ class OsmAndRasterBackend:
 
         return response
 
+    def _read_exactly(self, process: QProcess, size: int, timeout_ms: int) -> bytes:
+        data = bytearray()
+        while len(data) < size:
+            chunk = bytes(process.read(size - len(data)))
+            if chunk:
+                data.extend(chunk)
+                continue
+            if process.state() != QProcess.ProcessState.Running:
+                self._discard_process(process)
+                raise TileBackendUnavailableError("OsmAnd helper exited during a binary response")
+            if not process.waitForReadyRead(timeout_ms):
+                self._discard_process(process)
+                raise TileBackendUnavailableError("Timed out while reading binary data from the OsmAnd helper")
+        return bytes(data)
+
+    def _communicate_render(
+        self, process: QProcess, payload: dict[str, object], *, request_id: int, timeout_ms: int
+    ) -> QImage:
+        message = json.dumps(payload, ensure_ascii=True) + "\\n"
+        process.write(message.encode("utf8"))
+        if not process.waitForBytesWritten(timeout_ms):
+            self._discard_process(process)
+            raise TileBackendUnavailableError("Timed out while writing a render request to the OsmAnd helper")
+        header = self._read_exactly(process, 40, timeout_ms)
+        try:
+            magic, version, header_size, status, response_id, width, height, stride, pixel_format, payload_size = struct.unpack(
+                "<4sHHIIIIIIQ", header
+            )
+        except struct.error as exc:
+            self._discard_process(process)
+            raise TileBackendUnavailableError("OsmAnd helper returned an invalid binary header") from exc
+        if magic != b"OSMR" or version != 1 or header_size != 40:
+            self._discard_process(process)
+            raise TileBackendUnavailableError("OsmAnd helper returned an unsupported binary protocol header")
+        if response_id != request_id:
+            self._discard_process(process)
+            raise TileBackendUnavailableError(
+                f"OsmAnd helper response ID mismatch: expected {request_id}, received {response_id}"
+            )
+        if payload_size > 512 * 1024 * 1024:
+            self._discard_process(process)
+            raise TileBackendUnavailableError("OsmAnd helper response exceeds the 512 MiB safety limit")
+        binary_payload = self._read_exactly(process, int(payload_size), timeout_ms)
+        if status != 0:
+            detail = binary_payload.decode("utf8", errors="replace").strip()
+            raise TileRenderError(detail or f"OsmAnd render failed with status {status}")
+        if pixel_format != 1 or width <= 0 or height <= 0 or stride < width * 4:
+            self._discard_process(process)
+            raise TileBackendUnavailableError("OsmAnd helper returned invalid RGBA8 dimensions or stride")
+        if payload_size != stride * height:
+            self._discard_process(process)
+            raise TileBackendUnavailableError("OsmAnd helper returned an inconsistent RGBA8 payload length")
+        image = QImage(
+            bytearray(binary_payload), int(width), int(height), int(stride), QImage.Format.Format_RGBA8888
+        ).copy()
+        if image.isNull():
+            raise TileRenderError("Unable to create a QImage from the helper's RGBA8 response")
+        return image
+
     def _validate_paths(self) -> None:
         data_path = Path(self._source.data_path)
         if not data_path.exists():
@@ -259,21 +320,23 @@ class OsmAndRasterBackend:
 
     def _render_tile_to_cache(self, z: int, x: int, y: int, cache_path: Path) -> None:
         process = self._ensure_process()
+        request_id = self._next_request_id
+        self._next_request_id = (self._next_request_id + 1) & 0xFFFFFFFF
+        if self._next_request_id == 0:
+            self._next_request_id = 1
         request = {
             "command": "render",
+            "request_id": request_id,
             "z": int(z),
             "x": int(x),
             "y": int(y),
             "device_scale": float(self._device_scale),
-            "output_path": str(cache_path),
         }
-        response = self._communicate(process, request, timeout_ms=DEFAULT_HELPER_RENDER_TIMEOUT_MS)
-        if response.get("status") != "ok":
-            message = str(response.get("message", "unknown render failure"))
-            raise TileRenderError(message)
-
-        if not cache_path.exists():
-            raise TileRenderError(f"OsmAnd helper reported success but '{cache_path}' was not created")
+        image = self._communicate_render(
+            process, request, request_id=request_id, timeout_ms=DEFAULT_HELPER_RENDER_TIMEOUT_MS
+        )
+        if not image.save(str(cache_path), "PNG"):
+            raise TileRenderError(f"Unable to save RGBA tile to cache file '{cache_path}'")
 
     def _discard_process(self, process: QProcess) -> None:
         if self._process is process:
