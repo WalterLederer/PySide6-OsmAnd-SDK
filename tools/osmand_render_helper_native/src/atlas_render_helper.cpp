@@ -1,0 +1,277 @@
+#include "osmand_native_map_widget.h"
+
+#include <QApplication>
+#include <QElapsedTimer>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMetaObject>
+#include <QTimer>
+
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <iostream>
+#include <limits>
+#include <string>
+#include <thread>
+
+namespace
+{
+constexpr int kFramePollIntervalMs = 100;
+constexpr int kFrameTimeoutMs = 30000;
+constexpr int kMaximumDimension = 8192;
+constexpr std::uint16_t kProtocolVersion = 1;
+constexpr std::uint16_t kHeaderSize = 40;
+constexpr std::uint32_t kPixelFormatRgba8 = 1;
+
+void writeU16(std::array<unsigned char, kHeaderSize>& header, std::size_t offset, std::uint16_t value)
+{
+    header[offset] = static_cast<unsigned char>(value & 0xff);
+    header[offset + 1] = static_cast<unsigned char>((value >> 8) & 0xff);
+}
+
+void writeU32(std::array<unsigned char, kHeaderSize>& header, std::size_t offset, std::uint32_t value)
+{
+    for (int i = 0; i < 4; ++i)
+        header[offset + static_cast<std::size_t>(i)] = static_cast<unsigned char>((value >> (i * 8)) & 0xff);
+}
+
+void writeU64(std::array<unsigned char, kHeaderSize>& header, std::size_t offset, std::uint64_t value)
+{
+    for (int i = 0; i < 8; ++i)
+        header[offset + static_cast<std::size_t>(i)] = static_cast<unsigned char>((value >> (i * 8)) & 0xff);
+}
+
+void writeFrameHeader(
+    std::uint32_t status,
+    std::uint32_t requestId,
+    std::uint32_t width,
+    std::uint32_t height,
+    std::uint32_t stride,
+    std::uint32_t pixelFormat,
+    std::uint64_t payloadLength)
+{
+    std::array<unsigned char, kHeaderSize> header{};
+    header[0] = 'O';
+    header[1] = 'S';
+    header[2] = 'M';
+    header[3] = 'A';
+    writeU16(header, 4, kProtocolVersion);
+    writeU16(header, 6, kHeaderSize);
+    writeU32(header, 8, status);
+    writeU32(header, 12, requestId);
+    writeU32(header, 16, width);
+    writeU32(header, 20, height);
+    writeU32(header, 24, stride);
+    writeU32(header, 28, pixelFormat);
+    writeU64(header, 32, payloadLength);
+
+    std::fwrite(header.data(), 1, header.size(), stdout);
+}
+
+void writeError(std::uint32_t requestId, const QString& message)
+{
+    std::cerr << "[atlas-helper] request " << requestId << ": "
+              << message.toStdString() << std::endl;
+    writeFrameHeader(1, requestId, 0, 0, 0, 0, 0);
+    std::fflush(stdout);
+}
+
+void writeRgbaFrame(
+    std::uint32_t requestId,
+    const QByteArray& rgba,
+    int width,
+    int height,
+    int stride)
+{
+    writeFrameHeader(
+        0,
+        requestId,
+        static_cast<std::uint32_t>(width),
+        static_cast<std::uint32_t>(height),
+        static_cast<std::uint32_t>(stride),
+        kPixelFormatRgba8,
+        static_cast<std::uint64_t>(rgba.size()));
+
+    if (!rgba.isEmpty())
+        std::fwrite(rgba.constData(), 1, static_cast<std::size_t>(rgba.size()), stdout);
+    std::fflush(stdout);
+}
+}
+
+int main(int argc, char* argv[])
+{
+    if (argc != 4)
+    {
+        std::cerr
+            << "Usage: osmand_atlas_render_helper.exe <map.obf> <resources-root> <style-file>\n"
+            << "stdin: one JSON render command per line\n"
+            << "stdout: OSMA v1 header (40 bytes, little-endian) followed by RGBA8 bytes\n";
+        return 2;
+    }
+
+    QApplication app(argc, argv);
+    app.setQuitOnLastWindowClosed(false);
+
+    const OsmAndNativeMapWidget::Configuration configuration{
+        QString::fromLocal8Bit(argv[1]),
+        QString::fromLocal8Bit(argv[2]),
+        QString::fromLocal8Bit(argv[3]),
+        false
+    };
+
+    QString errorMessage;
+    auto* widget = OsmAndNativeMapWidget::create(configuration, nullptr, errorMessage);
+    if (!widget)
+    {
+        std::cerr << "[atlas-helper] initialization failed: "
+                  << errorMessage.toStdString() << std::endl;
+        return 3;
+    }
+
+    widget->setMinimumSize(1, 1);
+    widget->resize(1280, 960);
+    widget->setWindowTitle(QStringLiteral("OsmAnd Atlas Render Helper"));
+    widget->setWindowFlag(Qt::Tool, true);
+    widget->move(-32000, -32000);
+    widget->setZoomLevel(13.0);
+    widget->setCenterLonLat(16.3738, 48.2082);
+    widget->show();
+
+    QTimer captureTimer;
+    captureTimer.setInterval(kFramePollIntervalMs);
+
+    bool requestActive = false;
+    std::uint32_t activeRequestId = 0;
+    QElapsedTimer requestTimer;
+
+    QObject::connect(&captureTimer, &QTimer::timeout, &app,
+        [&]() {
+            if (!requestActive)
+            {
+                captureTimer.stop();
+                return;
+            }
+
+            QByteArray rgba;
+            int width = 0;
+            int height = 0;
+            int stride = 0;
+            bool rendererIdle = false;
+            bool frameInvalidated = true;
+            QString captureError;
+
+            const auto captured = widget->grabFrameRgba(
+                rgba, width, height, stride, rendererIdle, frameInvalidated, captureError);
+
+            if (captured && rendererIdle && !frameInvalidated)
+            {
+                captureTimer.stop();
+                requestActive = false;
+                writeRgbaFrame(activeRequestId, rgba, width, height, stride);
+                return;
+            }
+
+            if (requestTimer.elapsed() >= kFrameTimeoutMs)
+            {
+                captureTimer.stop();
+                requestActive = false;
+                writeError(
+                    activeRequestId,
+                    captured
+                        ? QStringLiteral("Atlas did not settle within %1 ms").arg(kFrameTimeoutMs)
+                        : QStringLiteral("Framebuffer capture failed: %1").arg(captureError));
+            }
+        });
+
+    std::thread inputThread([&app, widget, &captureTimer, &requestActive, &activeRequestId, &requestTimer]() {
+        std::string line;
+        while (std::getline(std::cin, line))
+        {
+            const auto commandLine = QString::fromUtf8(line.data(), static_cast<qsizetype>(line.size()));
+            QMetaObject::invokeMethod(&app, [&, commandLine]() {
+                QJsonParseError parseError;
+                const auto document = QJsonDocument::fromJson(commandLine.toUtf8(), &parseError);
+                if (parseError.error != QJsonParseError::NoError || !document.isObject())
+                {
+                    writeError(0, QStringLiteral("Invalid JSON command: %1").arg(parseError.errorString()));
+                    return;
+                }
+
+                const auto command = document.object();
+                const auto type = command.value(QStringLiteral("type")).toString();
+                if (type == QStringLiteral("quit"))
+                {
+                    app.quit();
+                    return;
+                }
+                if (type != QStringLiteral("render"))
+                {
+                    writeError(0, QStringLiteral("Unsupported command type: %1").arg(type));
+                    return;
+                }
+
+                const auto requestValue = command.value(QStringLiteral("requestId"));
+                const auto widthValue = command.value(QStringLiteral("width"));
+                const auto heightValue = command.value(QStringLiteral("height"));
+                const auto longitudeValue = command.value(QStringLiteral("longitude"));
+                const auto latitudeValue = command.value(QStringLiteral("latitude"));
+                const auto zoomValue = command.value(QStringLiteral("zoom"));
+
+                if (!requestValue.isDouble() || !widthValue.isDouble() || !heightValue.isDouble()
+                    || !longitudeValue.isDouble() || !latitudeValue.isDouble() || !zoomValue.isDouble())
+                {
+                    writeError(0, QStringLiteral("render requires numeric requestId, width, height, longitude, latitude and zoom"));
+                    return;
+                }
+
+                const auto requestNumber = requestValue.toDouble();
+                const auto requestedWidth = widthValue.toInt(-1);
+                const auto requestedHeight = heightValue.toInt(-1);
+                const auto longitude = longitudeValue.toDouble();
+                const auto latitude = latitudeValue.toDouble();
+                const auto zoom = zoomValue.toDouble();
+
+                if (requestNumber < 0.0 || requestNumber > std::numeric_limits<std::uint32_t>::max()
+                    || requestedWidth < 1 || requestedWidth > kMaximumDimension
+                    || requestedHeight < 1 || requestedHeight > kMaximumDimension
+                    || longitude < -180.0 || longitude > 180.0
+                    || latitude < -90.0 || latitude > 90.0
+                    || zoom < 2.0 || zoom > 22.0)
+                {
+                    writeError(
+                        requestNumber >= 0.0 && requestNumber <= std::numeric_limits<std::uint32_t>::max()
+                            ? static_cast<std::uint32_t>(requestNumber) : 0,
+                        QStringLiteral("render parameters are outside supported ranges"));
+                    return;
+                }
+
+                const auto requestId = static_cast<std::uint32_t>(requestNumber);
+                if (requestActive)
+                {
+                    writeError(requestId, QStringLiteral("A render request is already active; send one command at a time"));
+                    return;
+                }
+
+                requestActive = true;
+                activeRequestId = requestId;
+                requestTimer.restart();
+
+                widget->resize(requestedWidth, requestedHeight);
+                widget->setZoomLevel(zoom);
+                widget->setCenterLonLat(longitude, latitude);
+                widget->update();
+                captureTimer.start();
+            }, Qt::QueuedConnection);
+        }
+
+        QMetaObject::invokeMethod(&app, [&app]() { app.quit(); }, Qt::QueuedConnection);
+    });
+
+    const auto exitCode = app.exec();
+    if (inputThread.joinable())
+        inputThread.join();
+
+    delete widget;
+    return exitCode;
+}
