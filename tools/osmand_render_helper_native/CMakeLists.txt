@@ -83,7 +83,7 @@ elseif(CMAKE_TARGET_OS STREQUAL "windows")
     set(CMAKE_TARGET_CPU_ARCH "amd64" CACHE STRING "OsmAnd CPU architecture")
     set(CMAKE_TARGET_CPU_ARCH_FAMILY "x86" CACHE STRING "OsmAnd CPU architecture family")
     set(CMAKE_TARGET_CPU_NAME "amd64" CACHE STRING "OsmAnd CPU name")
-    set(CMAKE_SHARED_LIBS_ALLOWED_ON_TARGET OFF CACHE BOOL "Build shared libraries when supported")
+    set(CMAKE_SHARED_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build shared libraries when supported" FORCE)
     set(CMAKE_STATIC_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build static libraries when supported")
     set(CMAKE_COMPILER_FAMILY "gcc" CACHE STRING "OsmAnd compiler family")
     set(ws2_32_LIBRARY ws2_32 CACHE STRING "Winsock library used by MinGW builds")
@@ -170,6 +170,12 @@ target_link_libraries(osmand_render_helper
         Qt6::Network
         Qt6::Gui
         Qt6::Widgets
+        dwrite
+)
+
+target_link_options(osmand_render_helper
+    PRIVATE
+        "-Wl,-u,DWriteCreateFactory"
 )
 
 target_link_libraries(osmand_native_widget
@@ -179,7 +185,17 @@ target_link_libraries(osmand_native_widget
         Qt6::Gui
         Qt6::Widgets
         Qt6::OpenGL
+        dwrite
+)
+
+target_link_libraries(osmand_native_widget
+    PRIVATE
         Qt6::OpenGLWidgets
+)
+
+target_link_options(osmand_native_widget
+    PRIVATE
+        "-Wl,-u,DWriteCreateFactory"
 )
 
 target_include_directories(osmand_render_helper

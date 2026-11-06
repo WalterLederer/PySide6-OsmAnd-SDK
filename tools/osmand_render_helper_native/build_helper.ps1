@@ -4,10 +4,12 @@ param(
     [ValidateSet("Debug", "Release", "RelWithDebInfo", "MinSizeRel")]
     [string]$BuildType = "Release",
     [string]$CMakeExe = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
-    [string]$Generator = "MinGW Makefiles"
+    [string]$Generator = "MinGW Makefiles",
+    [string]$GitBashExe = "C:\Program Files\Git\bin\bash.exe"
 )
 
 $ErrorActionPreference = "Stop"
+git config --global core.longpaths true
 
 function Assert-Exists {
     param([Parameter(Mandatory = $true)][string]$PathToCheck)
@@ -15,6 +17,23 @@ function Assert-Exists {
         throw "Required path does not exist: $PathToCheck"
     }
 }
+
+
+Assert-Exists $GitBashExe
+
+$gitBin = Split-Path -Parent $GitBashExe
+$gitUsrBin = Join-Path (Split-Path -Parent $gitBin) 'usr\bin'
+
+# Git Bash muss vor WindowsApps stehen.
+$env:PATH = "$gitBin;$gitUsrBin;$QtRoot\bin;$MinGWRoot\bin;$env:PATH"
+
+$resolvedBash = (Get-Command bash.exe -ErrorAction Stop).Source
+
+if ($resolvedBash -ne $GitBashExe) {
+    throw "Wrong Bash executable resolved: $resolvedBash"
+}
+
+Write-Host "Using Git Bash: $resolvedBash"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot "..\.."))

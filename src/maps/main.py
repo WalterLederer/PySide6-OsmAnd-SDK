@@ -633,15 +633,21 @@ class MainWindow(QMainWindow):
         self._refresh_window_chrome()
 
     def capture_screenshot(self, destination: Path) -> bool:
-        """Save a screenshot of the current preview window."""
+        """Save a screenshot of the currently rendered map."""
 
         output_path = destination.resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        pixmap = self.grab()
+
+        if isinstance(self._map_widget, MapGLWidget):
+            pixmap = self._map_widget.grabFramebuffer()
+        else:
+            pixmap = self._map_widget.grab()
+
         if pixmap.isNull():
             return False
-        return pixmap.save(str(output_path))
 
+        return pixmap.save(str(output_path))
+        
     def _handle_view_changed(self, center_x: float, center_y: float, zoom: float) -> None:
         del center_x, center_y, zoom
         self._refresh_window_chrome()
@@ -863,31 +869,30 @@ def _schedule_screenshot_capture(
     *,
     capture_delay_ms: int,
 ) -> None:
-    """Capture a screenshot after the native/Python renderer settles."""
+    """Capture the rendered map before shutting down its renderer."""
 
     delay_ms = max(0, int(capture_delay_ms))
 
     def _capture_and_exit() -> None:
-        # Properly shutdown the map widget before exiting to avoid
-        # "QProcess: Destroyed while process is still running" warnings
+        if window.capture_screenshot(screenshot_path):
+            print(f"[maps.main] screenshot={screenshot_path.resolve()}", flush=True)
+            exit_code = 0
+        else:
+            print(
+                f"[maps.main] failed to save screenshot to {screenshot_path.resolve()}",
+                file=sys.stderr,
+                flush=True,
+            )
+            exit_code = 1
+
         map_widget = window._map_widget
         if hasattr(map_widget, "shutdown"):
             map_widget.shutdown()
 
-        if window.capture_screenshot(screenshot_path):
-            print(f"[maps.main] screenshot={screenshot_path.resolve()}", flush=True)
-            app.exit(0)
-            return
-
-        print(
-            f"[maps.main] failed to save screenshot to {screenshot_path.resolve()}",
-            file=sys.stderr,
-            flush=True,
-        )
-        app.exit(1)
+        app.exit(exit_code)
 
     QTimer.singleShot(delay_ms, _capture_and_exit)
-
+    
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv if argv is not None else sys.argv[1:])
