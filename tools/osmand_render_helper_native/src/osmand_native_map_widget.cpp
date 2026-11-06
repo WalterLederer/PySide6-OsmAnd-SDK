@@ -860,7 +860,8 @@ void OsmAndNativeMapWidget::syncRendererCamera(bool forcedUpdate)
     _mapRenderer->setZoom(static_cast<float>(_zoomLevel), forcedUpdate);
     _mapRenderer->setAzimuth(0.0f, forcedUpdate);
     _mapRenderer->setElevationAngle(kDefaultElevationAngle, forcedUpdate);
-    _mapRenderer->forcedFrameInvalidate();
+    if (forcedUpdate)
+        _mapRenderer->forcedFrameInvalidate();
 }
 
 void OsmAndNativeMapWidget::beginInteractiveRendering()
