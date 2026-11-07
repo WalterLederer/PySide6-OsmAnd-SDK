@@ -8,6 +8,7 @@ $style = Join-Path $resources "rendering_styles\default.render.xml"
 $log = Join-Path $sdk "dist\atlas-persistent-test.log"
 $stderrLog = Join-Path $sdk "dist\atlas-persistent-test-stderr.log"
 $rgba = Join-Path $sdk "dist\atlas-persistent-test.rgba"
+$png = Join-Path $sdk "dist\atlas-persistent-test.png"
 
 function Write-Log([string]$Message) {
     $line = "$(Get-Date -Format 'HH:mm:ss.fff') $Message"
@@ -46,6 +47,62 @@ function Read-ExactTimeout($Stream, [int]$Count, [int]$TimeoutSeconds) {
 
 $proc = $null
 $stderrTask = $null
+
+Add-Type -AssemblyName System.Drawing
+
+$pngWriterSource = @'
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+
+public static class AtlasPngWriter
+{
+    public static void Save(string path, byte[] rgba, int width, int height, int sourceStride)
+    {
+        if (rgba == null) throw new ArgumentNullException("rgba");
+        if (width <= 0 || height <= 0 || sourceStride < width * 4)
+            throw new ArgumentOutOfRangeException("Invalid image dimensions or stride.");
+        if ((long)sourceStride * height > rgba.LongLength)
+            throw new ArgumentException("RGBA buffer is shorter than stride x height.");
+
+        using (var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+        {
+            var rectangle = new Rectangle(0, 0, width, height);
+            var data = bitmap.LockBits(rectangle, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+            try
+            {
+                var row = new byte[width * 4];
+
+                for (int y = 0; y < height; y++)
+                {
+                    Buffer.BlockCopy(rgba, y * sourceStride, row, 0, row.Length);
+
+                    // QImage Format_RGBA8888 is RGBA; Format32bppArgb is BGRA in memory on Windows.
+                    for (int x = 0; x < width; x++)
+                    {
+                        int p = x * 4;
+                        byte red = row[p];
+                        row[p] = row[p + 2];
+                        row[p + 2] = red;
+                    }
+
+                    Marshal.Copy(row, 0, IntPtr.Add(data.Scan0, y * data.Stride), row.Length);
+                }
+            }
+            finally
+            {
+                bitmap.UnlockBits(data);
+            }
+
+            bitmap.Save(path, ImageFormat.Png);
+        }
+    }
+}
+'@
+
+Add-Type -TypeDefinition $pngWriterSource -Language CSharp
 
 try {
     if (Test-Path -LiteralPath $log) {
@@ -176,6 +233,14 @@ try {
         throw "Payload unerwartet gross: $payloadLength"
     }
 
+    if ($pixelFormat -ne 1) {
+        throw "Nicht unterstuetztes Pixel-Format: $pixelFormat (erwartet RGBA8 = 1)"
+    }
+
+    if ($stride -lt ($width * 4)) {
+        throw "Stride ist kleiner als Breite x 4: $stride"
+    }
+
     Write-Log "Reading RGBA payload..."
 
     [byte[]]$pixels = Read-ExactTimeout $outputStream ([int]$payloadLength) 60
@@ -184,6 +249,9 @@ try {
 
     Write-Log "RGBA file written: $rgba"
     Write-Log "Received bytes: $($pixels.Length)"
+
+    [AtlasPngWriter]::Save($png, $pixels, [int]$width, [int]$height, [int]$stride)
+    Write-Log "PNG file written: $png ($($width)x$($height))"
 
     $unique = @{}
 
@@ -195,8 +263,7 @@ try {
 
     Write-Log "Unique sampled RGBA values: $($unique.Count)"
 
-    Write-Log "Frame empfangen. Sichtbares Kartenfenster bleibt 5 Sekunden geöffnet."
-    Start-Sleep -Seconds 5
+    Write-Log "Frame empfangen. Kein sichtbares Kartenfenster erforderlich."
 
     Write-Log "Sending quit..."
     $inputStream.WriteLine('{"type":"quit"}')
@@ -262,6 +329,7 @@ try {
     Write-Host "Hauptprotokoll: $log"
     Write-Host "Helper stderr:   $stderrLog"
     Write-Host "RGBA-Datei:      $rgba"
+    Write-Host "PNG-Datei:       $png"
     Write-Host ""
     Read-Host "Test beendet. Enter zum Schliessen"
 }
