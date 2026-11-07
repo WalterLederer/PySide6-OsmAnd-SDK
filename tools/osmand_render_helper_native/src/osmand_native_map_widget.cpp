@@ -415,9 +415,21 @@ bool OsmAndNativeMapWidget::grabFrameRgba(
 
 void OsmAndNativeMapWidget::initializeGL()
 {
+    _openGlInitializationTimer.start();
     connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &OsmAndNativeMapWidget::cleanupRenderer, Qt::DirectConnection);
     if (!ensureRenderer() && _initError.isEmpty())
         _initError = QStringLiteral("Failed to initialize the native OsmAnd renderer");
+    _openGlInitializationMs = _openGlInitializationTimer.elapsed();
+}
+
+qint64 OsmAndNativeMapWidget::openGlInitializationMs() const
+{
+    return _openGlInitializationMs;
+}
+
+qint64 OsmAndNativeMapWidget::firstFrameMs() const
+{
+    return _firstFrameMs;
 }
 
 void OsmAndNativeMapWidget::resizeGL(int width, int height)
@@ -462,6 +474,8 @@ void OsmAndNativeMapWidget::paintGL()
     _mapRenderer->update();
     if (_mapRenderer->prepareFrame())
         _mapRenderer->renderFrame();
+    if (_firstFrameMs < 0 && _openGlInitializationTimer.isValid())
+        _firstFrameMs = _openGlInitializationTimer.elapsed();
 
     if (!_mapRenderer->isIdle() || _mapRenderer->isFrameInvalidated())
         requestFullUpdate();
