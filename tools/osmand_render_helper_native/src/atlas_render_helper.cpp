@@ -371,7 +371,7 @@ int main(int argc, char* argv[])
                 // to compensate for the doubled viewport dimensions. Without
                 // this, OsmAnd renders a wider geographic area into the same
                 // MapLibre tile footprint and neighbouring tiles do not align.
-                const auto pixelScale = static_cast<double>(>(requestedWidth)) / 256.0;
+                const auto pixelScale = static_cast<double>(requestedWidth) / 256.0;
                 const auto zoomCompensation = std::log2(pixelScale);
                 widget->setZoomLevel(zoom + zoomCompensation);
                 widget->setCenterLonLat(longitude, latitude);
