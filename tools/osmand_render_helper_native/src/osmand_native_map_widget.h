@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QOpenGLWidget>
 #include <QPointF>
 #include <QShowEvent>
@@ -52,6 +53,8 @@ public:
         bool& rendererIdle, bool& frameInvalidated, QString& errorMessage);
 
     bool isFrameReady(bool& rendererIdle, bool& frameInvalidated, QString& errorMessage);
+    qint64 openGlInitializationMs() const;
+    qint64 firstFrameMs() const;
 
 protected:
     void initializeGL() override;
@@ -87,6 +90,9 @@ private:
     QString _locale;
     QString _initError;
     bool _resourcesReady = false;
+    QElapsedTimer _openGlInitializationTimer;
+    qint64 _openGlInitializationMs = -1;
+    qint64 _firstFrameMs = -1;
     bool _dragging = false;
     QPointF _lastMousePosition;
     double _centerX = 0.5;
