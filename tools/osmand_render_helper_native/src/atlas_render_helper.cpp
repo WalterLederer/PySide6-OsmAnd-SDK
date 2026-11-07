@@ -188,6 +188,8 @@ int main(int argc, char* argv[])
         false
     };
 
+    QElapsedTimer widgetCreationTimer;
+    widgetCreationTimer.start();
     QString errorMessage;
     auto* widget = OsmAndNativeMapWidget::create(configuration, nullptr, errorMessage);
     if (!widget)
@@ -196,6 +198,8 @@ int main(int argc, char* argv[])
                   << errorMessage.toStdString() << std::endl;
         return 3;
     }
+
+    std::cerr << "ATLAS_INIT widget_create_ms=" << widgetCreationTimer.elapsed() << std::endl;
 
     widget->setAttribute(Qt::WA_DontShowOnScreen, true); 
     widget->setMinimumSize(1, 1);
@@ -212,9 +216,24 @@ int main(int argc, char* argv[])
     bool requestActive = false;
     std::uint32_t activeRequestId = 0;
     QElapsedTimer requestTimer;
+    bool openGlTimingReported = false;
+    bool firstFrameTimingReported = false;
+    bool initializationReported = false;
 
     QObject::connect(&captureTimer, &QTimer::timeout, &app,
         [&]() {
+            if (!openGlTimingReported && widget->openGlInitializationMs() >= 0)
+            {
+                std::cerr << "ATLAS_INIT opengl_initialization_ms="
+                          << widget->openGlInitializationMs() << std::endl;
+                openGlTimingReported = true;
+            }
+            if (!firstFrameTimingReported && widget->firstFrameMs() >= 0)
+            {
+                std::cerr << "ATLAS_INIT first_frame_after_gl_init_ms="
+                          << widget->firstFrameMs() << std::endl;
+                firstFrameTimingReported = true;
+            }
             if (!requestActive)
             {
                 captureTimer.stop();
@@ -227,6 +246,12 @@ int main(int argc, char* argv[])
 
             const auto stateChecked = widget->isFrameReady(
                 rendererIdle, frameInvalidated, captureError);
+
+            if (stateChecked && !initializationReported)
+            {
+                std::cerr << "ATLAS_INIT renderer_initialized=1" << std::endl;
+                initializationReported = true;
+            }
 
             if (stateChecked && rendererIdle && !frameInvalidated)
             {
