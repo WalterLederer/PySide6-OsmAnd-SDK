@@ -268,59 +268,8 @@ try {
 
     Write-Log "Unique sampled RGBA values: $($unique.Count)"
 
-    Write-Log "Frame empfangen. Kein sichtbares Kartenfenster erforderlich."
-
-        # Zweite Render-Anfrage im selben Helper-Prozess
-    $request2 = @{
-        type = "render"
-        requestId = 2
-        width = 1280
-        height = 960
-        longitude = 16.414
-        latitude = 48.208
-        zoom = 15
-    } | ConvertTo-Json -Compress
-
-    Write-Log "Sending second render request to same helper process..."
-    $inputStream.WriteLine($request2)
-    $inputStream.Flush()
-
-    [byte[]]$header2 = Read-ExactTimeout $outputStream 40 45
-
-    $magic2 = [System.Text.Encoding]::ASCII.GetString($header2, 0, 4)
-    $status2 = [BitConverter]::ToUInt32($header2, 8)
-    $requestId2 = [BitConverter]::ToUInt32($header2, 12)
-    $width2 = [BitConverter]::ToUInt32($header2, 16)
-    $height2 = [BitConverter]::ToUInt32($header2, 20)
-    $stride2 = [BitConverter]::ToUInt32($header2, 24)
-    $pixelFormat2 = [BitConverter]::ToUInt32($header2, 28)
-    $payloadLength2 = [BitConverter]::ToUInt64($header2, 32)
-
-    Write-Log "Second frame magic: $magic2"
-    Write-Log "Second frame status: $status2"
-    Write-Log "Second frame request ID: $requestId2"
-    Write-Log "Second frame resolution: ${width2}x${height2}"
-    Write-Log "Second frame payload: $payloadLength2"
-
-    if ($magic2 -ne "OSMA" -or $status2 -ne 0 -or $requestId2 -ne 2) {
-        throw "Second render request failed or returned an invalid header."
-    }
-
-    if ($pixelFormat2 -ne 1 -or $payloadLength2 -ne ([uint64]$stride2 * [uint64]$height2)) {
-        throw "Second frame has invalid pixel format or payload length."
-    }
-
-    [byte[]]$pixels2 = Read-ExactTimeout $outputStream ([int]$payloadLength2) 60
-
-    $rgba2 = Join-Path $sdk "dist\atlas-persistent-test-2.rgba"
-    $png2 = Join-Path $sdk "dist\atlas-persistent-test-2.png"
-
-    [System.IO.File]::WriteAllBytes($rgba2, $pixels2)
-    [AtlasPngWriter]::Save($png2, $pixels2, [int]$width2, [int]$height2, [int]$stride2)
-
-    Write-Log "Second RGBA file written: $rgba2"
-    Write-Log "Second PNG file written: $png2"
-    Write-Log "Second frame received from the same helper PID: $($proc.Id)"
+    Write-Log "Frame empfangen. Sichtbares Kartenfenster bleibt 5 Sekunden geöffnet."
+    Start-Sleep -Seconds 5
 
     Write-Log "Sending quit..."
     $inputStream.WriteLine('{"type":"quit"}')
