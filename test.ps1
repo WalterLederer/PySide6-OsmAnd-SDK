@@ -8,6 +8,7 @@ $style = Join-Path $resources "rendering_styles\default.render.xml"
 $log = Join-Path $sdk "dist\atlas-persistent-test.log"
 $stderrLog = Join-Path $sdk "dist\atlas-persistent-test-stderr.log"
 $rgba = Join-Path $sdk "dist\atlas-persistent-test.rgba"
+$png = Join-Path $sdk "dist\atlas-persistent-test.png"
 
 function Write-Log([string]$Message) {
     $line = "$(Get-Date -Format 'HH:mm:ss.fff') $Message"
@@ -46,6 +47,67 @@ function Read-ExactTimeout($Stream, [int]$Count, [int]$TimeoutSeconds) {
 
 $proc = $null
 $stderrTask = $null
+
+Add-Type -AssemblyName System.Drawing
+
+$pngWriterSource = @'
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+
+public static class AtlasPngWriter
+{
+    public static void Save(string path, byte[] rgba, int width, int height, int sourceStride)
+    {
+        if (rgba == null) throw new ArgumentNullException("rgba");
+        if (width <= 0 || height <= 0 || sourceStride < width * 4)
+            throw new ArgumentOutOfRangeException("Invalid image dimensions or stride.");
+        if ((long)sourceStride * height > rgba.LongLength)
+            throw new ArgumentException("RGBA buffer is shorter than stride x height.");
+
+        using (var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+        {
+            var rectangle = new Rectangle(0, 0, width, height);
+            var data = bitmap.LockBits(rectangle, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+            try
+            {
+                var row = new byte[width * 4];
+
+                for (int y = 0; y < height; y++)
+                {
+                    Buffer.BlockCopy(rgba, y * sourceStride, row, 0, row.Length);
+
+                    // QImage Format_RGBA8888 is RGBA; Format32bppArgb is BGRA in memory on Windows.
+                    for (int x = 0; x < width; x++)
+                    {
+                        int p = x * 4;
+                        byte red = row[p];
+                        row[p] = row[p + 2];
+                        row[p + 2] = red;
+                    }
+
+                    Marshal.Copy(row, 0, IntPtr.Add(data.Scan0, y * data.Stride), row.Length);
+                }
+            }
+            finally
+            {
+                bitmap.UnlockBits(data);
+            }
+
+            bitmap.Save(path, ImageFormat.Png);
+        }
+    }
+}
+'@
+
+$systemDrawingAssembly = [System.Drawing.Bitmap].Assembly.Location
+
+Add-Type `
+    -TypeDefinition $pngWriterSource `
+    -Language CSharp `
+    -ReferencedAssemblies $systemDrawingAssembly
 
 try {
     if (Test-Path -LiteralPath $log) {
@@ -176,6 +238,14 @@ try {
         throw "Payload unerwartet gross: $payloadLength"
     }
 
+    if ($pixelFormat -ne 1) {
+        throw "Nicht unterstuetztes Pixel-Format: $pixelFormat (erwartet RGBA8 = 1)"
+    }
+
+    if ($stride -lt ($width * 4)) {
+        throw "Stride ist kleiner als Breite x 4: $stride"
+    }
+
     Write-Log "Reading RGBA payload..."
 
     [byte[]]$pixels = Read-ExactTimeout $outputStream ([int]$payloadLength) 60
@@ -184,6 +254,9 @@ try {
 
     Write-Log "RGBA file written: $rgba"
     Write-Log "Received bytes: $($pixels.Length)"
+
+    [AtlasPngWriter]::Save($png, $pixels, [int]$width, [int]$height, [int]$stride)
+    Write-Log "PNG file written: $png ($($width)x$($height))"
 
     $unique = @{}
 
@@ -195,8 +268,59 @@ try {
 
     Write-Log "Unique sampled RGBA values: $($unique.Count)"
 
-    Write-Log "Frame empfangen. Sichtbares Kartenfenster bleibt 5 Sekunden geöffnet."
-    Start-Sleep -Seconds 5
+    Write-Log "Frame empfangen. Kein sichtbares Kartenfenster erforderlich."
+
+        # Zweite Render-Anfrage im selben Helper-Prozess
+    $request2 = @{
+        type = "render"
+        requestId = 2
+        width = 1280
+        height = 960
+        longitude = 16.414
+        latitude = 48.208
+        zoom = 15
+    } | ConvertTo-Json -Compress
+
+    Write-Log "Sending second render request to same helper process..."
+    $inputStream.WriteLine($request2)
+    $inputStream.Flush()
+
+    [byte[]]$header2 = Read-ExactTimeout $outputStream 40 45
+
+    $magic2 = [System.Text.Encoding]::ASCII.GetString($header2, 0, 4)
+    $status2 = [BitConverter]::ToUInt32($header2, 8)
+    $requestId2 = [BitConverter]::ToUInt32($header2, 12)
+    $width2 = [BitConverter]::ToUInt32($header2, 16)
+    $height2 = [BitConverter]::ToUInt32($header2, 20)
+    $stride2 = [BitConverter]::ToUInt32($header2, 24)
+    $pixelFormat2 = [BitConverter]::ToUInt32($header2, 28)
+    $payloadLength2 = [BitConverter]::ToUInt64($header2, 32)
+
+    Write-Log "Second frame magic: $magic2"
+    Write-Log "Second frame status: $status2"
+    Write-Log "Second frame request ID: $requestId2"
+    Write-Log "Second frame resolution: ${width2}x${height2}"
+    Write-Log "Second frame payload: $payloadLength2"
+
+    if ($magic2 -ne "OSMA" -or $status2 -ne 0 -or $requestId2 -ne 2) {
+        throw "Second render request failed or returned an invalid header."
+    }
+
+    if ($pixelFormat2 -ne 1 -or $payloadLength2 -ne ([uint64]$stride2 * [uint64]$height2)) {
+        throw "Second frame has invalid pixel format or payload length."
+    }
+
+    [byte[]]$pixels2 = Read-ExactTimeout $outputStream ([int]$payloadLength2) 60
+
+    $rgba2 = Join-Path $sdk "dist\atlas-persistent-test-2.rgba"
+    $png2 = Join-Path $sdk "dist\atlas-persistent-test-2.png"
+
+    [System.IO.File]::WriteAllBytes($rgba2, $pixels2)
+    [AtlasPngWriter]::Save($png2, $pixels2, [int]$width2, [int]$height2, [int]$stride2)
+
+    Write-Log "Second RGBA file written: $rgba2"
+    Write-Log "Second PNG file written: $png2"
+    Write-Log "Second frame received from the same helper PID: $($proc.Id)"
 
     Write-Log "Sending quit..."
     $inputStream.WriteLine('{"type":"quit"}')
@@ -262,6 +386,7 @@ try {
     Write-Host "Hauptprotokoll: $log"
     Write-Host "Helper stderr:   $stderrLog"
     Write-Host "RGBA-Datei:      $rgba"
+    Write-Host "PNG-Datei:       $png"
     Write-Host ""
     Read-Host "Test beendet. Enter zum Schliessen"
 }
