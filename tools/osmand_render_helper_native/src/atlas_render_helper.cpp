@@ -197,6 +197,7 @@ int main(int argc, char* argv[])
         return 3;
     }
 
+    widget->setAttribute(Qt::WA_DontShowOnScreen, true); 
     widget->setMinimumSize(1, 1);
     widget->resize(1280, 960);
     widget->setWindowTitle(QStringLiteral("OsmAnd Atlas Render Helper"));
