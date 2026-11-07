@@ -170,12 +170,20 @@ int main(int argc, char* argv[])
         return 4;
     }
 
-    if (argc != 4)
+    if (argc != 5)
     {
         std::cerr
-            << "Usage: osmand_atlas_render_helper.exe <map.obf> <resources-root> <style-file>\n"
+            << "Usage: osmand_atlas_render_helper.exe <map.obf> <resources-root> <style-file> <display-scale>\n"
             << "stdin: one JSON render command per line\n"
             << "stdout: OSMA v1 header (40 bytes, little-endian) followed by RGBA8 bytes\n";
+        return 2;
+    }
+
+    bool displayScaleOk = false;
+    const auto displayScale = QString::fromLocal8Bit(argv[4]).toDouble(&displayScaleOk);
+    if (!displayScaleOk || !std::isfinite(displayScale) || displayScale < 1.0 || displayScale > 4.0)
+    {
+        std::cerr << "[atlas-helper] display-scale must be a finite number between 1.0 and 4.0" << std::endl;
         return 2;
     }
 
@@ -188,7 +196,8 @@ int main(int argc, char* argv[])
         QString::fromLocal8Bit(argv[1]),
         QString::fromLocal8Bit(argv[2]),
         QString::fromLocal8Bit(argv[3]),
-        false
+        false,
+        displayScale
     };
 
     QElapsedTimer widgetCreationTimer;
@@ -202,6 +211,7 @@ int main(int argc, char* argv[])
         return 3;
     }
 
+    std::cerr << "ATLAS_INIT display_scale=" << displayScale << std::endl;
     std::cerr << "ATLAS_INIT widget_create_ms=" << widgetCreationTimer.elapsed() << std::endl;
 
     widget->setAttribute(Qt::WA_DontShowOnScreen, true); 
