@@ -55,9 +55,6 @@
 namespace
 {
 constexpr int kReferenceTileSize = 256;
-// Match the 150% Windows display scale for OsmAnd's density-aware map
-// styling (including label text), independently of the 512px framebuffer.
-constexpr float kDisplayDensityFactor = 1.5f;
 constexpr double kMercatorLatBound = 85.05112878;
 constexpr double kDefaultMinZoom = 2.0;
 constexpr double kDefaultMaxZoom = 19.0;
@@ -625,11 +622,14 @@ bool OsmAndNativeMapWidget::ensureRenderer()
         return false;
     }
 
+    // Use the actual Windows/Qt device scale for the complete map style:
+    // density-aware geometry, map styling and symbols must scale together.
+    const auto displayScale = static_cast<float>(std::max(1.0, devicePixelRatioF()));
     _mapPresentationEnvironment = std::make_shared<OsmAnd::MapPresentationEnvironment>(
         mapStyle,
-        kDisplayDensityFactor,
-        1.0f,
-        1.0f);
+        displayScale,
+        displayScale,
+        displayScale);
     _mapPresentationEnvironment->setLocaleLanguageId(_locale);
     _mapPresentationEnvironment->setSettings(QHash<QString, QString>{
         {QStringLiteral("nightMode"), _configuration.nightMode ? QStringLiteral("true") : QStringLiteral("false")},
@@ -662,7 +662,7 @@ bool OsmAndNativeMapWidget::ensureRenderer()
 
     OsmAnd::MapRendererSetupOptions setupOptions;
     setupOptions.gpuWorkerThreadEnabled = false;
-    setupOptions.displayDensityFactor = kDisplayDensityFactor;
+    setupOptions.displayDensityFactor = displayScale;
     setupOptions.pathToOpenGLShadersCache = openGlShadersCachePath();
 #if defined(Q_OS_LINUX)
     // The default batch-size heuristic can trigger a long shader warm-up on
