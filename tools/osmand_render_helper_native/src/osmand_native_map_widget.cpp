@@ -55,6 +55,9 @@
 namespace
 {
 constexpr int kReferenceTileSize = 256;
+// Match the 150% Windows display scale for OsmAnd map labels. This scales
+// text independently of the 512px framebuffer resolution.
+constexpr float kMapTextScale = 1.5f;
 constexpr double kMercatorLatBound = 85.05112878;
 constexpr double kDefaultMinZoom = 2.0;
 constexpr double kDefaultMaxZoom = 19.0;
@@ -625,7 +628,7 @@ bool OsmAndNativeMapWidget::ensureRenderer()
     _mapPresentationEnvironment = std::make_shared<OsmAnd::MapPresentationEnvironment>(
         mapStyle,
         static_cast<float>(std::max(1.0, devicePixelRatioF())),
-        1.0f,
+        kMapTextScale,
         1.0f);
     _mapPresentationEnvironment->setLocaleLanguageId(_locale);
     _mapPresentationEnvironment->setSettings(QHash<QString, QString>{
