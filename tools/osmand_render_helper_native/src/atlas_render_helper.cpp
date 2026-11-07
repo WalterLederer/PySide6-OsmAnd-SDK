@@ -178,6 +178,8 @@ int main(int argc, char* argv[])
         return 2;
     }
 
+    qputenv("QT_ENABLE_HIGHDPI_SCALING", "0");
+
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
 
