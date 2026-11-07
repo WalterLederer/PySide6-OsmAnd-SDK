@@ -8,6 +8,7 @@
 #include <QTimer>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -364,7 +365,15 @@ int main(int argc, char* argv[])
                 requestTimer.restart();
 
                 widget->resize(requestedWidth, requestedHeight);
-                widget->setZoomLevel(zoom);
+                // The XYZ tile always represents the same geographic extent.
+                // A 512px framebuffer has twice as many pixels per axis as the
+                // 256px baseline, so increase the native map zoom by one level
+                // to compensate for the doubled viewport dimensions. Without
+                // this, OsmAnd renders a wider geographic area into the same
+                // MapLibre tile footprint and neighbouring tiles do not align.
+                const auto pixelScale = static_cast<double>(>(requestedWidth)) / 256.0;
+                const auto zoomCompensation = std::log2(pixelScale);
+                widget->setZoomLevel(zoom + zoomCompensation);
                 widget->setCenterLonLat(longitude, latitude);
                 widget->update();
                 captureTimer.start();
