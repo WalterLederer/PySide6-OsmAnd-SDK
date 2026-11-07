@@ -622,9 +622,11 @@ bool OsmAndNativeMapWidget::ensureRenderer()
         return false;
     }
 
-    // Use the actual Windows/Qt device scale for the complete map style:
-    // density-aware geometry, map styling and symbols must scale together.
-    const auto displayScale = static_cast<float>(std::max(1.0, devicePixelRatioF()));
+    // The atlas helper disables Qt automatic HiDPI scaling, so use the
+    // explicit monitor scale supplied by the host application instead.
+    const auto configuredScale = std::isfinite(_configuration.displayScale)
+        ? _configuration.displayScale : 1.0;
+    const auto displayScale = static_cast<float>(std::clamp(configuredScale, 1.0, 4.0));
     _mapPresentationEnvironment = std::make_shared<OsmAnd::MapPresentationEnvironment>(
         mapStyle,
         displayScale,
@@ -888,7 +890,9 @@ void OsmAndNativeMapWidget::syncRendererViewport(bool forcedUpdate)
     if (!_mapRenderer)
         return;
 
-    const auto scale = std::max(1.0, devicePixelRatioF());
+    const auto configuredScale = std::isfinite(_configuration.displayScale)
+        ? _configuration.displayScale : 1.0;
+    const auto scale = std::clamp(configuredScale, 1.0, 4.0);
     const auto logicalWidth = std::max(1, width());
     const auto logicalHeight = std::max(1, height());
     // OsmAnd expects window/viewport geometry in widget coordinates and applies
