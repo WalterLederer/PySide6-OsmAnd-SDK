@@ -321,6 +321,40 @@ bool OsmAndNativeMapWidget::projectLonLat(double longitude, double latitude, QPo
     return true;
 }
 
+bool OsmAndNativeMapWidget::isFrameReady(
+    bool& rendererIdle,
+    bool& frameInvalidated,
+    QString& errorMessage)
+{
+    rendererIdle = false;
+    frameInvalidated = true;
+
+    if (QThread::currentThread() != thread())
+    {
+        errorMessage = QStringLiteral("Frame status check must run on the widget GUI thread");
+        return false;
+    }
+
+    if (!isValid() || !context())
+    {
+        errorMessage = QStringLiteral("OpenGL widget has no valid context");
+        return false;
+    }
+
+    if (!_mapRenderer || !_mapRenderer->isRenderingInitialized())
+    {
+        errorMessage = _initError.isEmpty()
+            ? QStringLiteral("AtlasMapRenderer is not initialized")
+            : _initError;
+        return false;
+    }
+
+    rendererIdle = _mapRenderer->isIdle();
+    frameInvalidated = _mapRenderer->isFrameInvalidated();
+
+    return true;
+}
+
 bool OsmAndNativeMapWidget::grabFrameRgba(
     QByteArray& pixelData, int& frameWidth, int& frameHeight, int& frameStride,
     bool& rendererIdle, bool& frameInvalidated, QString& errorMessage)

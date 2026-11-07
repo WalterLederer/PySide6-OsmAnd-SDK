@@ -220,23 +220,31 @@ int main(int argc, char* argv[])
                 return;
             }
 
-            QByteArray rgba;
-            int width = 0;
-            int height = 0;
-            int stride = 0;
             bool rendererIdle = false;
             bool frameInvalidated = true;
             QString captureError;
 
-            const auto captured = widget->grabFrameRgba(
-                rgba, width, height, stride, rendererIdle, frameInvalidated, captureError);
+            const auto stateChecked = widget->isFrameReady(
+                rendererIdle, frameInvalidated, captureError);
 
-            if (captured && rendererIdle && !frameInvalidated)
+            if (stateChecked && rendererIdle && !frameInvalidated)
             {
-                captureTimer.stop();
-                requestActive = false;
-                writeRgbaFrame(activeRequestId, rgba, width, height, stride);
-                return;
+                QByteArray rgba;
+                int width = 0;
+                int height = 0;
+                int stride = 0;
+
+                const auto captured = widget->grabFrameRgba(
+                    rgba, width, height, stride,
+                    rendererIdle, frameInvalidated, captureError);
+
+                if (captured && rendererIdle && !frameInvalidated)
+                {
+                    captureTimer.stop();
+                    requestActive = false;
+                    writeRgbaFrame(activeRequestId, rgba, width, height, stride);
+                    return;
+                }
             }
 
             if (requestTimer.elapsed() >= kFrameTimeoutMs)
@@ -245,9 +253,9 @@ int main(int argc, char* argv[])
                 requestActive = false;
                 writeError(
                     activeRequestId,
-                    captured
-                        ? QStringLiteral("Atlas did not settle within %1 ms").arg(kFrameTimeoutMs)
-                        : QStringLiteral("Framebuffer capture failed: %1").arg(captureError));
+                    captureError.isEmpty()
+                    ? QStringLiteral("Atlas did not settle within %1 ms").arg(kFrameTimeoutMs)
+                    : QStringLiteral("Frame readiness/capture failed: %1").arg(captureError));
             }
         });
 

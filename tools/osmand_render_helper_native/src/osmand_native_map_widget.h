@@ -51,6 +51,8 @@ public:
     bool grabFrameRgba(QByteArray& pixelData, int& width, int& height, int& stride,
         bool& rendererIdle, bool& frameInvalidated, QString& errorMessage);
 
+    bool isFrameReady(bool& rendererIdle, bool& frameInvalidated, QString& errorMessage);
+
 protected:
     void initializeGL() override;
     void resizeGL(int width, int height) override;

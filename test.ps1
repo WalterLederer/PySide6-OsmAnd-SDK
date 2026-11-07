@@ -1,6 +1,6 @@
-Set-Location "$env:LOCALAPPDATA\LumaScope\OsmAnd-SDK"
+Set-Location "C:\__Daten\Dev\__LumaScope\OsmAnd-SDK"
+$sdk = "C:\__Daten\Dev\__LumaScope\OsmAnd-SDK"
 
-$sdk = "$env:LOCALAPPDATA\LumaScope\OsmAnd-SDK"
 $exe = Join-Path $sdk "tools\osmand_render_helper_native\dist\osmand_atlas_render_helper.exe"
 $obf = "C:\__Daten\Dev\__LumaScope\source\tools\Austria_wien_europe.obf"
 $resources = Join-Path $sdk "vendor\osmand\resources"
@@ -194,6 +194,9 @@ try {
     }
 
     Write-Log "Unique sampled RGBA values: $($unique.Count)"
+
+    Write-Log "Frame empfangen. Sichtbares Kartenfenster bleibt 5 Sekunden geöffnet."
+    Start-Sleep -Seconds 5
 
     Write-Log "Sending quit..."
     $inputStream.WriteLine('{"type":"quit"}')
