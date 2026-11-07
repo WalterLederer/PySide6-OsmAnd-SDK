@@ -34,6 +34,7 @@ public:
         QString resourcesRoot;
         QString stylePath;
         bool nightMode = false;
+        double displayScale = 1.0;
     };
 
     static OsmAndNativeMapWidget* create(const Configuration& configuration, QWidget* parent, QString& errorMessage);
