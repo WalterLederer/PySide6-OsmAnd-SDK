@@ -969,6 +969,7 @@ void OsmAndNativeMapWidget::syncRendererViewport(bool forcedUpdate)
     _mapRenderer->setWindowSize(OsmAnd::PointI(logicalWidth, logicalHeight), forcedUpdate);
     _mapRenderer->setViewport(OsmAnd::AreaI(0, 0, logicalHeight, logicalWidth), forcedUpdate);
     _mapRenderer->setViewportScale(scale, forcedUpdate);
+    _mapRenderer->setViewportShift(logicalWidth / 2, logicalHeight / 2, forcedUpdate);
 }
 
 void OsmAndNativeMapWidget::syncRendererCamera(bool forcedUpdate)
