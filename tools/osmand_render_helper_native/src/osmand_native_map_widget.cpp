@@ -847,10 +847,10 @@ bool OsmAndNativeMapWidget::ensureRenderer()
     const auto requestedMinZoom = static_cast<OsmAnd::ZoomLevel>(static_cast<int>(kDefaultMinZoom));
     if (!_mapRenderer->setMinZoomLevel(requestedMinZoom, true))
     {
-        _initError = QStringLiteral("Unable to set the Atlas renderer minimum zoom to %1")
-            .arg(static_cast<int>(kDefaultMinZoom));
-        _mapRenderer.reset();
-        return false;
+        std::cerr << "[OsmAnd Atlas] Could not lower renderer minimum zoom to "
+                  << static_cast<int>(kDefaultMinZoom)
+                  << "; actual minimum remains " << _mapRenderer->getMinZoomLevel()
+                  << std::endl;
     }
     _minZoomLevel = std::max(kDefaultMinZoom, static_cast<double>(_mapRenderer->getMinZoomLevel()));
     _maxZoomLevel = std::max(_minZoomLevel, static_cast<double>(_mapRenderer->getMaxZoomLevel()));
