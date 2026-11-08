@@ -25,6 +25,7 @@
 #include <QPointer>
 #include <QStandardPaths>
 #include <QStringList>
+#include <QStringList>
 #include <QSurfaceFormat>
 #include <QThread>
 #include <QtGlobal>
@@ -633,11 +634,65 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
         return false;
 
     _stylesCollection = std::make_shared<OsmAnd::MapStylesCollection>();
-    if (!_stylesCollection->addStyleFromFile(_configuration.stylePath))
+
+    // Load the complete style inheritance chain from base to selected style.
+    // Specialized styles such as offroad.render.xml depend on topo.render.xml;
+    // loading only the selected XML lets the collection accept the file but
+    // leaves its parent selectors unresolved, producing blank map frames.
+    QStringList styleChain;
+    QString currentStylePath = _configuration.stylePath;
+    const auto stylesDirectory = QDir(_configuration.resourcesRoot).filePath(QStringLiteral("rendering_styles"));
+    while (!currentStylePath.isEmpty())
     {
-        OsmAndCoreRuntime::instance().release();
-        errorMessage = QStringLiteral("Unable to load rendering style: %1").arg(_configuration.stylePath);
-        return false;
+        if (styleChain.contains(currentStylePath))
+        {
+            OsmAndCoreRuntime::instance().release();
+            errorMessage = QStringLiteral("Circular OsmAnd rendering-style dependency: %1").arg(currentStylePath);
+            return false;
+        }
+        styleChain.append(currentStylePath);
+
+        QFile currentStyleFile(currentStylePath);
+        if (!currentStyleFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            OsmAndCoreRuntime::instance().release();
+            errorMessage = QStringLiteral("Unable to read rendering style: %1").arg(currentStylePath);
+            return false;
+        }
+        QXmlStreamReader styleXml(&currentStyleFile);
+        while (!styleXml.atEnd() && !styleXml.isStartElement())
+            styleXml.readNext();
+        if (!styleXml.isStartElement() || styleXml.name() != QStringLiteral("renderingStyle"))
+        {
+            OsmAndCoreRuntime::instance().release();
+            errorMessage = QStringLiteral("Invalid OsmAnd rendering-style root element: %1").arg(currentStylePath);
+            return false;
+        }
+
+        const auto dependency = styleXml.attributes().value(QStringLiteral("depends")).toString().trimmed();
+        if (dependency.isEmpty())
+            break;
+
+        const auto dependencyPath = QDir(stylesDirectory).filePath(dependency + QStringLiteral(".render.xml"));
+        if (!QFileInfo::exists(dependencyPath))
+        {
+            OsmAndCoreRuntime::instance().release();
+            errorMessage = QStringLiteral("Rendering style dependency '%1' required by '%2' was not found: %3")
+                .arg(dependency, currentStylePath, dependencyPath);
+            return false;
+        }
+        currentStylePath = dependencyPath;
+    }
+
+    std::reverse(styleChain.begin(), styleChain.end());
+    for (const auto& stylePath : styleChain)
+    {
+        if (!_stylesCollection->addStyleFromFile(stylePath))
+        {
+            OsmAndCoreRuntime::instance().release();
+            errorMessage = QStringLiteral("Unable to load rendering style or dependency: %1").arg(stylePath);
+            return false;
+        }
     }
 
     _obfsCollection = std::make_shared<OsmAnd::ObfsCollection>();
@@ -981,13 +1036,14 @@ void OsmAndNativeMapWidget::syncRendererViewport(bool forcedUpdate)
         }
     }
 
-    // OsmAnd expects window/viewport geometry in widget coordinates and applies
-    // the high-DPI scale separately via ``setViewportScale()``. Passing device
-    // pixels here as well effectively doubles the DPR and can make the
-    // renderer wrap the map vertically at low zoom levels.
+    // Keep the geographic viewport identical to the actual framebuffer.
+    // Applying displayScale here enlarges the GL viewport (for example 768px
+    // inside a 512px FBO at 150% density), so grabFramebuffer() captures only
+    // its centre and neighbouring XYZ tiles no longer share exact edges.
+    // High-DPI symbol/text sizing is already applied by MapPresentationEnvironment.
     _mapRenderer->setWindowSize(OsmAnd::PointI(logicalWidth, logicalHeight), forcedUpdate);
     _mapRenderer->setViewport(OsmAnd::AreaI(0, 0, logicalHeight, logicalWidth), forcedUpdate);
-    _mapRenderer->setViewportScale(scale, forcedUpdate);
+    _mapRenderer->setViewportScale(1.0f, forcedUpdate);
     _mapRenderer->setViewportShift(logicalWidth / 2, logicalHeight / 2, forcedUpdate);
 }
 
