@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <memory>
+#include <iostream>
 
 #include <QDir>
 #include <QCryptographicHash>
@@ -389,6 +390,18 @@ bool OsmAndNativeMapWidget::grabFrameRgba(
     // below let the caller distinguish a settled frame from an intermediate one.
     repaint();
     const auto frame = grabFramebuffer();
+
+    if (std::getenv("OSMAND_ATLAS_DEBUG_GEOMETRY") != nullptr && !frame.isNull())
+    {
+        std::cerr
+            << "[OsmAnd Atlas][geometry] framebuffer"
+            << " size=" << frame.width() << "x" << frame.height()
+            << " bytesPerLine=" << frame.bytesPerLine()
+            << " widget=" << width() << "x" << height()
+            << " dpr=" << devicePixelRatioF()
+            << std::endl;
+    }
+
     if (frame.isNull())
     {
         errorMessage = QStringLiteral("QOpenGLWidget returned an empty framebuffer");
@@ -474,6 +487,35 @@ void OsmAndNativeMapWidget::paintGL()
     _mapRenderer->update();
     if (_mapRenderer->prepareFrame())
         _mapRenderer->renderFrame();
+
+    if (std::getenv("OSMAND_ATLAS_DEBUG_GEOMETRY") != nullptr)
+    {
+        static int lastWidth = -1;
+        static int lastHeight = -1;
+
+        if (width() != lastWidth || height() != lastHeight)
+        {
+            GLint viewport[4] = {};
+            if (auto* functions = context() ? context()->functions() : nullptr)
+            {
+                functions->glGetIntegerv(GL_VIEWPORT, viewport);
+
+                std::cerr
+                    << "[OsmAnd Atlas][geometry] glViewport"
+                    << " x=" << viewport[0]
+                    << " y=" << viewport[1]
+                    << " width=" << viewport[2]
+                    << " height=" << viewport[3]
+                    << " widget=" << width() << "x" << height()
+                    << " dpr=" << devicePixelRatioF()
+                    << std::endl;
+            }
+
+            lastWidth = width();
+            lastHeight = height();
+        }
+    }
+
     if (_firstFrameMs < 0 && _openGlInitializationTimer.isValid())
         _firstFrameMs = _openGlInitializationTimer.elapsed();
 
@@ -895,6 +937,31 @@ void OsmAndNativeMapWidget::syncRendererViewport(bool forcedUpdate)
     const auto scale = std::clamp(configuredScale, 1.0, 4.0);
     const auto logicalWidth = std::max(1, width());
     const auto logicalHeight = std::max(1, height());
+
+    if (std::getenv("OSMAND_ATLAS_DEBUG_GEOMETRY") != nullptr)
+    {
+        static int lastWidth = -1;
+        static int lastHeight = -1;
+        static double lastScale = -1.0;
+
+        if (logicalWidth != lastWidth || logicalHeight != lastHeight || scale != lastScale)
+        {
+            std::cerr
+                << "[OsmAnd Atlas][geometry] viewport"
+                << " widgetLogical=" << logicalWidth << "x" << logicalHeight
+                << " widgetDpr=" << devicePixelRatioF()
+                << " displayScale=" << scale
+                << " scaledViewport=" << logicalWidth * scale
+                << "x" << logicalHeight * scale
+                << " forced=" << forcedUpdate
+                << std::endl;
+
+            lastWidth = logicalWidth;
+            lastHeight = logicalHeight;
+            lastScale = scale;
+        }
+    }
+
     // OsmAnd expects window/viewport geometry in widget coordinates and applies
     // the high-DPI scale separately via ``setViewportScale()``. Passing device
     // pixels here as well effectively doubles the DPR and can make the
