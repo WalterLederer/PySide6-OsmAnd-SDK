@@ -40,6 +40,24 @@ constexpr std::uint16_t kProtocolVersion = 1;
 constexpr std::uint16_t kHeaderSize = 40;
 constexpr std::uint32_t kPixelFormatRgba8 = 1;
 
+QString decodePathArgument(const char* argument)
+{
+    const auto value = QString::fromLatin1(argument);
+    if (value.startsWith(QStringLiteral("utf8hex:")))
+    {
+        const auto hex = value.mid(8).toLatin1();
+        if (hex.isEmpty() || (hex.size() % 2) != 0)
+            return {};
+        const auto utf8 = QByteArray::fromHex(hex);
+        if (utf8.isEmpty() || utf8.size() * 2 != hex.size())
+            return {};
+        const auto path = QString::fromUtf8(utf8);
+        return path.toUtf8() == utf8 ? path : QString();
+    }
+    // Backward compatibility for existing helper invocations.
+    return QString::fromLocal8Bit(argument);
+}
+
 #ifdef _WIN32
 HANDLE g_protocolOutputHandle = INVALID_HANDLE_VALUE;
 
@@ -190,7 +208,13 @@ int main(int argc, char* argv[])
     // command-line length limit. The first argument is now a short JSON file path.
     // Retain inline JSON support for compatibility with existing helper callers.
     QByteArray obfPathsJson;
-    QFile obfPathsFile(QString::fromLocal8Bit(argv[1]));
+    const auto configurationArgument = decodePathArgument(argv[1]);
+    if (configurationArgument.isEmpty())
+    {
+        std::cerr << "[atlas-helper] invalid OBF configuration argument" << std::endl;
+        return 2;
+    }
+    QFile obfPathsFile(configurationArgument);
     if (obfPathsFile.exists())
     {
         if (!obfPathsFile.open(QIODevice::ReadOnly))
@@ -239,8 +263,8 @@ int main(int argc, char* argv[])
 
     const OsmAndNativeMapWidget::Configuration configuration{
         obfPaths,
-        QString::fromLocal8Bit(argv[2]),
-        QString::fromLocal8Bit(argv[3]),
+        decodePathArgument(argv[2]),
+        decodePathArgument(argv[3]),
         false,
         displayScale
     };
