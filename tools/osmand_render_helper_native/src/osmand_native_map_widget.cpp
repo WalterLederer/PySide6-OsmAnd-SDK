@@ -1183,6 +1183,14 @@ void OsmAndNativeMapWidget::wrapCenter()
     if (_centerX < 0.0)
         _centerX += 1.0;
 
+    if (_configuration.allowVerticalViewportOverflow)
+    {
+        // Tile centers must remain at their requested XYZ coordinates even when
+        // the overscan viewport extends beyond the north/south world edges.
+        _centerY = std::clamp(_centerY, 0.0, 1.0);
+        return;
+    }
+
     const auto currentWorldSize = worldSize();
     const auto viewportHeight = std::max(1, height());
     const auto halfViewRatio = static_cast<double>(viewportHeight) / (2.0 * currentWorldSize);
