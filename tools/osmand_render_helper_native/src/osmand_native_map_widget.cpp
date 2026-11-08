@@ -13,6 +13,7 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
+#include <QXmlStreamReader>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
@@ -641,7 +642,25 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
 
     _obfsCollection = std::make_shared<OsmAnd::ObfsCollection>();
     _obfsCollection->addFile(_configuration.obfPath);
+
+    // The rendering style's internal name is not guaranteed to match its
+    // filename (for example, skimap.render.xml declares name="Ski-map").
+    // Resolve the style by the XML header name, not QFileInfo::baseName().
     _styleName = QFileInfo(_configuration.stylePath).baseName();
+    QFile styleFile(_configuration.stylePath);
+    if (styleFile.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        QXmlStreamReader styleXml(&styleFile);
+        while (!styleXml.atEnd() && !styleXml.isStartElement())
+            styleXml.readNext();
+        if (styleXml.isStartElement()
+            && styleXml.name() == QStringLiteral("renderingStyle"))
+        {
+            const auto declaredName = styleXml.attributes().value(QStringLiteral("name")).toString().trimmed();
+            if (!declaredName.isEmpty())
+                _styleName = declaredName;
+        }
+    }
     _locale = QLocale::system().name().section(QLatin1Char('_'), 0, 0).toLower();
     if (_locale.isEmpty())
         _locale = QStringLiteral("en");
