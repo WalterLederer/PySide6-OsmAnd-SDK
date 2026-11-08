@@ -30,10 +30,10 @@ namespace
 constexpr int kFramePollIntervalMs = 100;
 constexpr int kFrameTimeoutMs = 30000;
 constexpr int kMaximumDimension = 8192;
-// Render beyond the requested metatile and crop the centre. The larger base
-// margin is scaled by display density so high-density text/symbol placement
-// retains enough context even above 1.3x.
-constexpr int kLabelOverscanPixels = 256;
+// Render beyond the requested metatile and crop the centre. Street-name
+// captions can be substantially wider than a tile; use a generous base margin
+// and scale it with display density so labels are fully placed before cropping.
+constexpr int kLabelOverscanPixels = 512;
 constexpr std::uint16_t kProtocolVersion = 1;
 constexpr std::uint16_t kHeaderSize = 40;
 constexpr std::uint32_t kPixelFormatRgba8 = 1;
