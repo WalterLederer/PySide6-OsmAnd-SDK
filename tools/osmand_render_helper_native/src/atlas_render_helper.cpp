@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <iostream>
 #include <limits>
@@ -29,6 +30,10 @@ namespace
 constexpr int kFramePollIntervalMs = 100;
 constexpr int kFrameTimeoutMs = 30000;
 constexpr int kMaximumDimension = 8192;
+// Render beyond the requested tile and crop the centre. This gives OsmAnd's
+// symbol placement enough neighbouring context to avoid clipping labels at
+// the final XYZ tile edges.
+constexpr int kLabelOverscanPixels = 128;
 constexpr std::uint16_t kProtocolVersion = 1;
 constexpr std::uint16_t kHeaderSize = 40;
 constexpr std::uint32_t kPixelFormatRgba8 = 1;
@@ -232,6 +237,10 @@ int main(int argc, char* argv[])
     bool openGlTimingReported = false;
     bool firstFrameTimingReported = false;
     bool initializationReported = false;
+    int activeOutputWidth = 0;
+    int activeOutputHeight = 0;
+    int activeOverscanX = 0;
+    int activeOverscanY = 0;
 
     QObject::connect(&captureTimer, &QTimer::timeout, &app,
         [&]() {
@@ -281,7 +290,39 @@ int main(int argc, char* argv[])
                 {
                     captureTimer.stop();
                     requestActive = false;
-                    writeRgbaFrame(activeRequestId, rgba, width, height, stride);
+
+                    const auto expectedRenderWidth = activeOutputWidth + activeOverscanX * 2;
+                    const auto expectedRenderHeight = activeOutputHeight + activeOverscanY * 2;
+                    if (width != expectedRenderWidth || height != expectedRenderHeight
+                        || stride < width * 4)
+                    {
+                        writeError(
+                            activeRequestId,
+                            QStringLiteral("Overscan framebuffer dimensions do not match: got %1x%2 stride=%3, expected %4x%5")
+                                .arg(width).arg(height).arg(stride)
+                                .arg(expectedRenderWidth).arg(expectedRenderHeight));
+                        return;
+                    }
+
+                    QByteArray cropped;
+                    const auto croppedStride = activeOutputWidth * 4;
+                    cropped.resize(croppedStride * activeOutputHeight);
+                    for (int row = 0; row < activeOutputHeight; ++row)
+                    {
+                        const auto* source = rgba.constData()
+                            + static_cast<qsizetype>(row + activeOverscanY) * stride
+                            + static_cast<qsizetype>(activeOverscanX) * 4;
+                        auto* destination = cropped.data()
+                            + static_cast<qsizetype>(row) * croppedStride;
+                        std::memcpy(destination, source, static_cast<std::size_t>(croppedStride));
+                    }
+
+                    writeRgbaFrame(
+                        activeRequestId,
+                        cropped,
+                        activeOutputWidth,
+                        activeOutputHeight,
+                        croppedStride);
                     return;
                 }
             }
@@ -350,8 +391,8 @@ int main(int argc, char* argv[])
                 const auto zoom = zoomValue.toDouble();
 
                 if (requestNumber < 0.0 || requestNumber > std::numeric_limits<std::uint32_t>::max()
-                    || requestedWidth < 1 || requestedWidth > kMaximumDimension
-                    || requestedHeight < 1 || requestedHeight > kMaximumDimension
+                    || requestedWidth < 1 || requestedWidth > kMaximumDimension - 2 * kLabelOverscanPixels
+                    || requestedHeight < 1 || requestedHeight > kMaximumDimension - 2 * kLabelOverscanPixels
                     || longitude < -180.0 || longitude > 180.0
                     || latitude < -90.0 || latitude > 90.0
                     || zoom < 2.0 || zoom > 22.0)
@@ -374,13 +415,18 @@ int main(int argc, char* argv[])
                 activeRequestId = requestId;
                 requestTimer.restart();
 
-                widget->resize(requestedWidth, requestedHeight);
-                // The XYZ tile always represents the same geographic extent.
-                // A 512px framebuffer has twice as many pixels per axis as the
-                // 256px baseline, so increase the native map zoom by one level
-                // to compensate for the doubled viewport dimensions. Without
-                // this, OsmAnd renders a wider geographic area into the same
-                // MapLibre tile footprint and neighbouring tiles do not align.
+                activeOutputWidth = requestedWidth;
+                activeOutputHeight = requestedHeight;
+                activeOverscanX = kLabelOverscanPixels;
+                activeOverscanY = kLabelOverscanPixels;
+                const auto renderWidth = requestedWidth + activeOverscanX * 2;
+                const auto renderHeight = requestedHeight + activeOverscanY * 2;
+                widget->resize(renderWidth, renderHeight);
+                // Keep the requested XYZ tile's geographic extent unchanged.
+                // The widget is larger only to provide label-placement context;
+                // the centred requested-size rectangle is cropped after render.
+                // Therefore zoom compensation is based on output dimensions,
+                // not the overscan framebuffer dimensions.
                 const auto pixelScaleX = static_cast<double>(requestedWidth) / 256.0;
                 const auto pixelScaleY = static_cast<double>(requestedHeight) / 256.0;
                 // The native widget keeps its GL viewport at the framebuffer
@@ -400,6 +446,8 @@ int main(int argc, char* argv[])
                     std::cerr
                         << "[OsmAnd Atlas][geometry] request=" << requestId
                         << " requested=" << requestedWidth << "x" << requestedHeight
+                        << " render=" << renderWidth << "x" << renderHeight
+                        << " overscan=" << activeOverscanX << "x" << activeOverscanY
                         << " displayScale=" << displayScale
                         << " pixelScaleXY=" << pixelScaleX << "x" << pixelScaleY
                         << " effectiveScaleXY=" << effectivePixelScaleX << "x" << effectivePixelScaleY
