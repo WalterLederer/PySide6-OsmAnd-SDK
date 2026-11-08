@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
     const auto zoom = arguments.size() >= 8 ? arguments.at(7).toDouble() : 13.0;
 
     const OsmAndNativeMapWidget::Configuration configuration{
-        arguments.at(1),
+        QStringList{arguments.at(1)},
         arguments.at(2),
         arguments.at(3),
         false
