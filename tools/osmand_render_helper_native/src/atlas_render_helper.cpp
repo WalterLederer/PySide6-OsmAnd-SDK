@@ -30,10 +30,10 @@ namespace
 constexpr int kFramePollIntervalMs = 100;
 constexpr int kFrameTimeoutMs = 30000;
 constexpr int kMaximumDimension = 8192;
-// Render beyond the requested tile and crop the centre. This gives OsmAnd's
-// symbol placement enough neighbouring context to avoid clipping labels at
-// the final XYZ tile edges.
-constexpr int kLabelOverscanPixels = 128;
+// Render beyond the requested metatile and crop the centre. The larger base
+// margin is scaled by display density so high-density text/symbol placement
+// retains enough context even above 1.3x.
+constexpr int kLabelOverscanPixels = 256;
 constexpr std::uint16_t kProtocolVersion = 1;
 constexpr std::uint16_t kHeaderSize = 40;
 constexpr std::uint32_t kPixelFormatRgba8 = 1;
