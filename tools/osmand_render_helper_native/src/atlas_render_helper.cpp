@@ -1,6 +1,7 @@
 #include "osmand_native_map_widget.h"
 
 #include <QApplication>
+#include <QJsonArray>
 #include <QElapsedTimer>
 #include <QJsonDocument>
 #include <QJsonObject>
