@@ -381,17 +381,34 @@ int main(int argc, char* argv[])
                 // to compensate for the doubled viewport dimensions. Without
                 // this, OsmAnd renders a wider geographic area into the same
                 // MapLibre tile footprint and neighbouring tiles do not align.
-                const auto pixelScale = static_cast<double>(requestedWidth) / 256.0;
-                // The native widget keeps its dimensions in logical pixels,
-                // while syncRendererViewport() applies displayScale through
-                // setViewportScale(). That scale enlarges the renderer's
-                // effective viewport as well, so both factors must be included
-                // when matching the geographic extent of a 256px MapLibre tile.
-                // For a 512px frame at 1.5x density, the effective viewport is
-                // 768px and therefore needs log2(3) zoom levels of compensation.
-                const auto effectivePixelScale = pixelScale * displayScale;
-                const auto zoomCompensation = std::log2(effectivePixelScale);
-                widget->setZoomLevel(zoom + zoomCompensation);
+                const auto pixelScaleX = static_cast<double>(requestedWidth) / 256.0;
+                const auto pixelScaleY = static_cast<double>(requestedHeight) / 256.0;
+                const auto effectivePixelScaleX = pixelScaleX * displayScale;
+                const auto effectivePixelScaleY = pixelScaleY * displayScale;
+                const auto zoomCompensationX = std::log2(effectivePixelScaleX);
+                const auto zoomCompensationY = std::log2(effectivePixelScaleY);
+
+                // Keep the existing X-based zoom compensation unchanged while
+                // collecting geometry diagnostics for both axes.
+                const auto zoomCompensation = zoomCompensationX;
+                const auto compensatedZoom = zoom + zoomCompensation;
+
+                if (std::getenv("OSMAND_ATLAS_DEBUG_GEOMETRY") != nullptr)
+                {
+                    std::cerr
+                        << "[OsmAnd Atlas][geometry] request=" << requestId
+                        << " requested=" << requestedWidth << "x" << requestedHeight
+                        << " displayScale=" << displayScale
+                        << " pixelScaleXY=" << pixelScaleX << "x" << pixelScaleY
+                        << " effectiveScaleXY=" << effectivePixelScaleX << "x" << effectivePixelScaleY
+                        << " zoom=" << zoom
+                        << " compensationXY=" << zoomCompensationX << "x" << zoomCompensationY
+                        << " compensatedZoom=" << compensatedZoom
+                        << " centerLonLat=" << longitude << "," << latitude
+                        << std::endl;
+                }
+
+                widget->setZoomLevel(compensatedZoom);
                 widget->setCenterLonLat(longitude, latitude);
                 widget->update();
                 captureTimer.start();
