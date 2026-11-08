@@ -339,7 +339,7 @@ int main(int argc, char* argv[])
             }
         });
 
-    std::thread inputThread([&app, widget, displayScale, &captureTimer, &requestActive, &activeRequestId, &requestTimer]() {
+    std::thread inputThread([&app, widget, displayScale, &captureTimer, &requestActive, &activeRequestId, &requestTimer, &activeOutputWidth, &activeOutputHeight, &activeOverscanX, &activeOverscanY]() {
         std::string line;
         while (std::getline(std::cin, line))
         {
