@@ -1,6 +1,7 @@
 #include "osmand_native_map_widget.h"
 
 #include <QApplication>
+#include <QFile>
 #include <QJsonArray>
 #include <QElapsedTimer>
 #include <QJsonDocument>
@@ -185,10 +186,31 @@ int main(int argc, char* argv[])
         return 2;
     }
 
-    const auto obfPathsDocument = QJsonDocument::fromJson(QString::fromLocal8Bit(argv[1]).toUtf8());
+    // The OBF list can contain hundreds of paths and exceed Windows' process
+    // command-line length limit. The first argument is now a short JSON file path.
+    // Retain inline JSON support for compatibility with existing helper callers.
+    QByteArray obfPathsJson;
+    QFile obfPathsFile(QString::fromLocal8Bit(argv[1]));
+    if (obfPathsFile.exists())
+    {
+        if (!obfPathsFile.open(QIODevice::ReadOnly))
+        {
+            std::cerr << "[atlas-helper] could not read OBF path configuration: "
+                      << obfPathsFile.errorString().toStdString() << std::endl;
+            return 2;
+        }
+        obfPathsJson = obfPathsFile.readAll();
+    }
+    else
+    {
+        obfPathsJson = QString::fromLocal8Bit(argv[1]).toUtf8();
+    }
+
+    const auto obfPathsDocument = QJsonDocument::fromJson(obfPathsJson);
     if (!obfPathsDocument.isArray() || obfPathsDocument.array().isEmpty())
     {
-        std::cerr << "[atlas-helper] first argument must be a non-empty JSON array of OBF paths" << std::endl;
+        std::cerr << "[atlas-helper] first argument must be a readable JSON file containing a non-empty array of OBF paths"
+                  << std::endl;
         return 2;
     }
     QStringList obfPaths;
