@@ -36,6 +36,8 @@ public:
         QString stylePath;
         bool nightMode = false;
         double displayScale = 1.0;
+        // Atlas tile renders intentionally allow the overscan viewport to extend beyond the Mercator world.
+        bool allowVerticalViewportOverflow = false;
     };
 
     static OsmAndNativeMapWidget* create(const Configuration& configuration, QWidget* parent, QString& errorMessage);
