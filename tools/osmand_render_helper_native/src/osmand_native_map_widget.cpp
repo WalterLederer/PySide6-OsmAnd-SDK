@@ -615,10 +615,18 @@ void OsmAndNativeMapWidget::wheelEvent(QWheelEvent* event)
 
 bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
 {
-    if (!QFileInfo::exists(_configuration.obfPath))
+    if (_configuration.obfPaths.isEmpty())
     {
-        errorMessage = QStringLiteral("OBF file does not exist: %1").arg(_configuration.obfPath);
+        errorMessage = QStringLiteral("No enabled OsmAnd OBF maps are selected.");
         return false;
+    }
+    for (const auto& obfPath : _configuration.obfPaths)
+    {
+        if (!QFileInfo::exists(obfPath))
+        {
+            errorMessage = QStringLiteral("OBF file does not exist: %1").arg(obfPath);
+            return false;
+        }
     }
     if (!QFileInfo::exists(_configuration.stylePath))
     {
@@ -696,7 +704,8 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
     }
 
     _obfsCollection = std::make_shared<OsmAnd::ObfsCollection>();
-    _obfsCollection->addFile(_configuration.obfPath);
+    for (const auto& obfPath : _configuration.obfPaths)
+        _obfsCollection->addFile(obfPath);
 
     // The rendering style's internal name is not guaranteed to match its
     // filename (for example, skimap.render.xml declares name="Ski-map").
