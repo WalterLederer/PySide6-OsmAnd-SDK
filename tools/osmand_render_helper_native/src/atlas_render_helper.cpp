@@ -383,13 +383,14 @@ int main(int argc, char* argv[])
                 // MapLibre tile footprint and neighbouring tiles do not align.
                 const auto pixelScaleX = static_cast<double>(requestedWidth) / 256.0;
                 const auto pixelScaleY = static_cast<double>(requestedHeight) / 256.0;
-                const auto effectivePixelScaleX = pixelScaleX * displayScale;
-                const auto effectivePixelScaleY = pixelScaleY * displayScale;
+                // setViewportScale() enlarges the GL viewport while the
+                // captured framebuffer remains at the requested dimensions.
+                // Compensate for that additional scale here so the geographic
+                // extent stays identical to the neighbouring XYZ tiles.
+                const auto effectivePixelScaleX = pixelScaleX / displayScale;
+                const auto effectivePixelScaleY = pixelScaleY / displayScale;
                 const auto zoomCompensationX = std::log2(effectivePixelScaleX);
                 const auto zoomCompensationY = std::log2(effectivePixelScaleY);
-
-                // Keep the existing X-based zoom compensation unchanged while
-                // collecting geometry diagnostics for both axes.
                 const auto zoomCompensation = zoomCompensationX;
                 const auto compensatedZoom = zoom + zoomCompensation;
 
