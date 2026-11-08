@@ -839,6 +839,19 @@ bool OsmAndNativeMapWidget::ensureRenderer()
         return false;
     }
 
+    // The Atlas helper renders individual XYZ tiles. The renderer's inferred
+    // minimum zoom can be raised by the selected OBF data set (for example to
+    // zoom 8 when only detailed regional map levels are present). That must not
+    // clamp the camera: MapLibre still requests valid lower-zoom tiles, which
+    // should render the available overview data or the normal map background.
+    const auto requestedMinZoom = static_cast<OsmAnd::ZoomLevel>(static_cast<int>(kDefaultMinZoom));
+    if (!_mapRenderer->setMinZoomLevel(requestedMinZoom, true))
+    {
+        _initError = QStringLiteral("Unable to set the Atlas renderer minimum zoom to %1")
+            .arg(static_cast<int>(kDefaultMinZoom));
+        _mapRenderer.reset();
+        return false;
+    }
     _minZoomLevel = std::max(kDefaultMinZoom, static_cast<double>(_mapRenderer->getMinZoomLevel()));
     _maxZoomLevel = std::max(_minZoomLevel, static_cast<double>(_mapRenderer->getMaxZoomLevel()));
     _defaultZoomLevel = std::clamp(kDefaultZoom, _minZoomLevel, _maxZoomLevel);
