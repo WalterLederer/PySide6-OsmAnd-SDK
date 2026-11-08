@@ -1024,9 +1024,9 @@ void OsmAndNativeMapWidget::syncRendererViewport(bool forcedUpdate)
                 << "[OsmAnd Atlas][geometry] viewport"
                 << " widgetLogical=" << logicalWidth << "x" << logicalHeight
                 << " widgetDpr=" << devicePixelRatioF()
-                << " displayScale=" << scale
-                << " scaledViewport=" << logicalWidth * scale
-                << "x" << logicalHeight * scale
+                << " presentationScale=" << scale
+                << " rendererViewport=" << logicalWidth
+                << "x" << logicalHeight
                 << " forced=" << forcedUpdate
                 << std::endl;
 
