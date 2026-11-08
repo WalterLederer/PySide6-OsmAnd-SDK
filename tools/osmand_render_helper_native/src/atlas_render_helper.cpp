@@ -438,7 +438,7 @@ int main(int argc, char* argv[])
                 // The native widget keeps its GL viewport at the framebuffer
                 // dimensions. Display density is applied to presentation
                 // (symbol/text) sizing, not to the geographic viewport.
-                // A 512px frame represents twice the 256px reference tile, so
+                // A 1024px metatile represents four 256px reference tiles (2x2), so
                 // compensate only for the actual output pixel dimensions.
                 const auto effectivePixelScaleX = pixelScaleX;
                 const auto effectivePixelScaleY = pixelScaleY;
