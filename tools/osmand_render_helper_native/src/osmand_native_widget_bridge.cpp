@@ -6,7 +6,10 @@
 #include <cwchar>
 
 #include <QString>
+#include <QStringList>
 #include <QByteArray>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QWidget>
 
 // Cross-platform export macro
@@ -52,8 +55,27 @@ OSMAND_EXPORT void* osmand_create_map_widget(
     wchar_t* errorBuffer,
     int errorBufferCapacity)
 {
+    const auto obfArgument = QString::fromWCharArray(obfPath ? obfPath : L"");
+    QStringList obfPaths;
+
+    // The widget bridge accepts a JSON array of OBF paths. Keep compatibility
+    // with existing callers that still pass one plain path.
+    const auto obfJson = QJsonDocument::fromJson(obfArgument.toUtf8());
+    if (obfJson.isArray())
+    {
+        for (const auto& value : obfJson.array())
+        {
+            if (value.isString() && !value.toString().isEmpty())
+                obfPaths.append(value.toString());
+        }
+    }
+    else if (!obfArgument.isEmpty())
+    {
+        obfPaths.append(obfArgument);
+    }
+
     const auto configuration = OsmAndNativeMapWidget::Configuration{
-        QString::fromWCharArray(obfPath ? obfPath : L""),
+        obfPaths,
         QString::fromWCharArray(resourcesRoot ? resourcesRoot : L""),
         QString::fromWCharArray(stylePath ? stylePath : L""),
         nightMode != 0,
