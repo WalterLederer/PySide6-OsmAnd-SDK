@@ -298,7 +298,7 @@ int main(int argc, char* argv[])
             }
         });
 
-    std::thread inputThread([&app, widget, &captureTimer, &requestActive, &activeRequestId, &requestTimer]() {
+    std::thread inputThread([&app, widget, displayScale, &captureTimer, &requestActive, &activeRequestId, &requestTimer]() {
         std::string line;
         while (std::getline(std::cin, line))
         {
