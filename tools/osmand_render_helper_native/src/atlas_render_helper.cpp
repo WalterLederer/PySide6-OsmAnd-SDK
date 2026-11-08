@@ -9,6 +9,7 @@
 #include <QMetaObject>
 #include <QTimer>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -484,17 +485,6 @@ int main(int argc, char* argv[])
                     return;
                 }
 
-                requestActive = true;
-                activeRequestId = requestId;
-                requestTimer.restart();
-
-                activeOutputWidth = requestedWidth;
-                activeOutputHeight = requestedHeight;
-                activeOverscanX = requestedOverscan;
-                activeOverscanY = requestedOverscan;
-                const auto renderWidth = requestedWidth + activeOverscanX * 2;
-                const auto renderHeight = requestedHeight + activeOverscanY * 2;
-                widget->resize(renderWidth, renderHeight);
                 // Keep the requested XYZ tile's geographic extent unchanged.
                 // The widget is larger only to provide label-placement context;
                 // the centred requested-size rectangle is cropped after render.
@@ -505,14 +495,44 @@ int main(int argc, char* argv[])
                 // The native widget keeps its GL viewport at the framebuffer
                 // dimensions. Display density is applied to presentation
                 // (symbol/text) sizing, not to the geographic viewport.
-                // A 1024px metatile represents four 256px reference tiles (2x2), so
-                // compensate only for the actual output pixel dimensions.
                 const auto effectivePixelScaleX = pixelScaleX;
                 const auto effectivePixelScaleY = pixelScaleY;
                 const auto zoomCompensationX = std::log2(effectivePixelScaleX);
                 const auto zoomCompensationY = std::log2(effectivePixelScaleY);
                 const auto zoomCompensation = zoomCompensationX;
                 const auto compensatedZoom = zoom + zoomCompensation;
+
+                // OsmAnd wraps map content vertically when the overscan viewport
+                // extends beyond the Mercator world. At low zoom this can put
+                // repeated copies of Africa into otherwise unrelated XYZ tiles.
+                // Keep the symmetric vertical overscan entirely inside [0, 1]
+                // while retaining the full horizontal label margin.
+                constexpr double mercatorLatitudeLimit = 85.05112878;
+                const auto clampedLatitude = std::clamp(
+                    latitude, -mercatorLatitudeLimit, mercatorLatitudeLimit);
+                const auto sinLatitude = std::sin(clampedLatitude * 3.14159265358979323846 / 180.0);
+                const auto centerY = 0.5
+                    - std::log((1.0 + sinLatitude) / (1.0 - sinLatitude))
+                        / (4.0 * 3.14159265358979323846);
+                const auto worldPixelSize = 256.0 * std::pow(2.0, compensatedZoom);
+                const auto halfOutputHeight = static_cast<double>(requestedHeight) / 2.0;
+                const auto safeTopOverscan = std::max(0.0, centerY * worldPixelSize - halfOutputHeight);
+                const auto safeBottomOverscan = std::max(
+                    0.0, (1.0 - centerY) * worldPixelSize - halfOutputHeight);
+                const auto safeVerticalOverscan = static_cast<int>(std::floor(
+                    std::min(safeTopOverscan, safeBottomOverscan)));
+
+                requestActive = true;
+                activeRequestId = requestId;
+                requestTimer.restart();
+
+                activeOutputWidth = requestedWidth;
+                activeOutputHeight = requestedHeight;
+                activeOverscanX = requestedOverscan;
+                activeOverscanY = std::min(requestedOverscan, safeVerticalOverscan);
+                const auto renderWidth = requestedWidth + activeOverscanX * 2;
+                const auto renderHeight = requestedHeight + activeOverscanY * 2;
+                widget->resize(renderWidth, renderHeight);
 
                 if (std::getenv("OSMAND_ATLAS_DEBUG_GEOMETRY") != nullptr)
                 {
@@ -521,6 +541,10 @@ int main(int argc, char* argv[])
                         << " requested=" << requestedWidth << "x" << requestedHeight
                         << " render=" << renderWidth << "x" << renderHeight
                         << " overscan=" << activeOverscanX << "x" << activeOverscanY
+                        << " requestedOverscan=" << requestedOverscan
+                        << " safeVerticalOverscan=" << safeVerticalOverscan
+                        << " centerNormalizedY=" << centerY
+                        << " worldPixelSize=" << worldPixelSize
                         << " displayScale=" << displayScale
                         << " overscanScale=" << (static_cast<double>(activeOverscanX) / kLabelOverscanPixels)
                         << " pixelScaleXY=" << pixelScaleX << "x" << pixelScaleY
