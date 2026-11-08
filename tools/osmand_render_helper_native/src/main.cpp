@@ -606,7 +606,7 @@ int runOneShotRender(const QStringList& arguments)
     OsmAndRenderHelperSession session;
     QString errorMessage;
     if (!session.initialize(
-        arguments.at(2),
+        QStringList{arguments.at(2)},
         arguments.at(3),
         arguments.at(4),
         false,
@@ -675,7 +675,7 @@ int runOneShotCaptionDump(const QStringList& arguments)
     OsmAndRenderHelperSession session;
     QString errorMessage;
     if (!session.initialize(
-        arguments.at(2),
+        QStringList{arguments.at(2)},
         arguments.at(3),
         arguments.at(4),
         false,
