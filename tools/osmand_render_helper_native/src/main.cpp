@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
@@ -62,7 +63,7 @@ class OsmAndRenderHelperSession
 {
 public:
     bool initialize(
-        const QString& obfPath,
+        const QStringList& obfPaths,
         const QString& resourcesRoot,
         const QString& stylePath,
         bool nightMode,
@@ -70,10 +71,18 @@ public:
     {
         shutdown();
 
-        if (!QFileInfo::exists(obfPath))
+        if (obfPaths.isEmpty())
         {
-            errorMessage = QStringLiteral("OBF file does not exist: %1").arg(obfPath);
+            errorMessage = QStringLiteral("No enabled OsmAnd OBF maps were supplied");
             return false;
+        }
+        for (const auto& obfPath : obfPaths)
+        {
+            if (!QFileInfo::exists(obfPath))
+            {
+                errorMessage = QStringLiteral("OBF file does not exist: %1").arg(obfPath);
+                return false;
+            }
         }
         if (!QFileInfo::exists(stylePath))
         {
@@ -111,7 +120,8 @@ public:
         }
 
         const auto obfsCollection = std::make_shared<OsmAnd::ObfsCollection>();
-        obfsCollection->addFile(obfPath);
+        for (const auto& obfPath : obfPaths)
+            obfsCollection->addFile(obfPath);
 
         _provider = provider;
         _stylesCollection = stylesCollection;
@@ -489,12 +499,27 @@ void writeBinaryRenderResponse(quint32 requestId, quint32 status, quint32 width,
 QJsonObject handleInitCommand(const QJsonObject& command, OsmAndRenderHelperSession& session)
 {
     QString errorMessage;
-    const auto obfPath = command.value(QStringLiteral("obf_path")).toString();
+    QStringList obfPaths;
+    const auto obfPathsValue = command.value(QStringLiteral("obf_paths"));
+    if (obfPathsValue.isArray())
+    {
+        for (const auto& value : obfPathsValue.toArray())
+        {
+            if (value.isString() && !value.toString().trimmed().isEmpty())
+                obfPaths.append(value.toString());
+        }
+    }
+    else
+    {
+        const auto legacyPath = command.value(QStringLiteral("obf_path")).toString();
+        if (!legacyPath.isEmpty())
+            obfPaths.append(legacyPath);
+    }
     const auto resourcesRoot = command.value(QStringLiteral("resources_root")).toString();
     const auto stylePath = command.value(QStringLiteral("style_path")).toString();
     const auto nightMode = command.value(QStringLiteral("night_mode")).toBool(false);
 
-    if (!session.initialize(obfPath, resourcesRoot, stylePath, nightMode, errorMessage))
+    if (!session.initialize(obfPaths, resourcesRoot, stylePath, nightMode, errorMessage))
         return makeErrorResponse(errorMessage);
 
     auto response = makeOkResponse();
