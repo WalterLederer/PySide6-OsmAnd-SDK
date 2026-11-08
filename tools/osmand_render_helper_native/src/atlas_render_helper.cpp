@@ -266,7 +266,8 @@ int main(int argc, char* argv[])
         decodePathArgument(argv[2]),
         decodePathArgument(argv[3]),
         false,
-        displayScale
+        displayScale,
+        true
     };
 
     QElapsedTimer widgetCreationTimer;
