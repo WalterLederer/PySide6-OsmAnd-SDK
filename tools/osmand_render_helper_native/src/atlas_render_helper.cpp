@@ -383,12 +383,13 @@ int main(int argc, char* argv[])
                 // MapLibre tile footprint and neighbouring tiles do not align.
                 const auto pixelScaleX = static_cast<double>(requestedWidth) / 256.0;
                 const auto pixelScaleY = static_cast<double>(requestedHeight) / 256.0;
-                // setViewportScale() enlarges the GL viewport while the
-                // captured framebuffer remains at the requested dimensions.
-                // Compensate for that additional scale here so the geographic
-                // extent stays identical to the neighbouring XYZ tiles.
-                const auto effectivePixelScaleX = pixelScaleX / displayScale;
-                const auto effectivePixelScaleY = pixelScaleY / displayScale;
+                // The native widget keeps its GL viewport at the framebuffer
+                // dimensions. Display density is applied to presentation
+                // (symbol/text) sizing, not to the geographic viewport.
+                // A 512px frame represents twice the 256px reference tile, so
+                // compensate only for the actual output pixel dimensions.
+                const auto effectivePixelScaleX = pixelScaleX;
+                const auto effectivePixelScaleY = pixelScaleY;
                 const auto zoomCompensationX = std::log2(effectivePixelScaleX);
                 const auto zoomCompensationY = std::log2(effectivePixelScaleY);
                 const auto zoomCompensation = zoomCompensationX;
