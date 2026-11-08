@@ -178,10 +178,27 @@ int main(int argc, char* argv[])
     if (argc != 5)
     {
         std::cerr
-            << "Usage: osmand_atlas_render_helper.exe <map.obf> <resources-root> <style-file> <display-scale>\n"
+            << "Usage: osmand_atlas_render_helper.exe <obf-paths-json> <resources-root> <style-file> <display-scale>\n"
             << "stdin: one JSON render command per line\n"
             << "stdout: OSMA v1 header (40 bytes, little-endian) followed by RGBA8 bytes\n";
         return 2;
+    }
+
+    const auto obfPathsDocument = QJsonDocument::fromJson(QString::fromLocal8Bit(argv[1]).toUtf8());
+    if (!obfPathsDocument.isArray() || obfPathsDocument.array().isEmpty())
+    {
+        std::cerr << "[atlas-helper] first argument must be a non-empty JSON array of OBF paths" << std::endl;
+        return 2;
+    }
+    QStringList obfPaths;
+    for (const auto& value : obfPathsDocument.array())
+    {
+        if (!value.isString() || value.toString().isEmpty())
+        {
+            std::cerr << "[atlas-helper] OBF path list contains an invalid entry" << std::endl;
+            return 2;
+        }
+        obfPaths.append(value.toString());
     }
 
     bool displayScaleOk = false;
@@ -198,7 +215,7 @@ int main(int argc, char* argv[])
     app.setQuitOnLastWindowClosed(false);
 
     const OsmAndNativeMapWidget::Configuration configuration{
-        QString::fromLocal8Bit(argv[1]),
+        obfPaths,
         QString::fromLocal8Bit(argv[2]),
         QString::fromLocal8Bit(argv[3]),
         false,
