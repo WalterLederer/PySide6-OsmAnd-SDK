@@ -10,6 +10,7 @@
 #include <QPointF>
 #include <QShowEvent>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 
 namespace OsmAnd
@@ -30,7 +31,7 @@ class OsmAndNativeMapWidget final : public QOpenGLWidget
 public:
     struct Configuration
     {
-        QString obfPath;
+        QStringList obfPaths;
         QString resourcesRoot;
         QString stylePath;
         bool nightMode = false;
