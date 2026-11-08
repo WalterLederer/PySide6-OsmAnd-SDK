@@ -398,7 +398,9 @@ int main(int argc, char* argv[])
                 writeError(
                     activeRequestId,
                     captureError.isEmpty()
-                    ? QStringLiteral("Atlas did not settle within %1 ms").arg(kFrameTimeoutMs)
+                    ? QStringLiteral("Atlas did not settle within %1 ms (rendererIdle=%2, frameInvalidated=%3, widget=%4x%5)")
+                        .arg(kFrameTimeoutMs).arg(rendererIdle ? 1 : 0).arg(frameInvalidated ? 1 : 0)
+                        .arg(widget->width()).arg(widget->height())
                     : QStringLiteral("Frame readiness/capture failed: %1").arg(captureError));
             }
         });
