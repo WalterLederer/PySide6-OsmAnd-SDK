@@ -180,7 +180,7 @@ int main(int argc, char* argv[])
     if (argc != 5)
     {
         std::cerr
-            << "Usage: osmand_atlas_render_helper.exe <obf-paths-json> <resources-root> <style-file> <display-scale>\n"
+            << "Usage: osmand_atlas_render_helper.exe <obf-paths-json-file> <resources-root> <style-file> <display-scale>\n"
             << "stdin: one JSON render command per line\n"
             << "stdout: OSMA v1 header (40 bytes, little-endian) followed by RGBA8 bytes\n";
         return 2;
