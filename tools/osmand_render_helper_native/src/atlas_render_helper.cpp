@@ -390,9 +390,15 @@ int main(int argc, char* argv[])
                 const auto latitude = latitudeValue.toDouble();
                 const auto zoom = zoomValue.toDouble();
 
+                // Text and symbol dimensions grow with presentation density.
+                // Scale the overscan by the same factor so labels retain a
+                // comparable logical safety margin at every display density.
+                const auto requestedOverscan = static_cast<int>(
+                    std::ceil(kLabelOverscanPixels * displayScale));
+
                 if (requestNumber < 0.0 || requestNumber > std::numeric_limits<std::uint32_t>::max()
-                    || requestedWidth < 1 || requestedWidth > kMaximumDimension - 2 * kLabelOverscanPixels
-                    || requestedHeight < 1 || requestedHeight > kMaximumDimension - 2 * kLabelOverscanPixels
+                    || requestedWidth < 1 || requestedWidth > kMaximumDimension - 2 * requestedOverscan
+                    || requestedHeight < 1 || requestedHeight > kMaximumDimension - 2 * requestedOverscan
                     || longitude < -180.0 || longitude > 180.0
                     || latitude < -90.0 || latitude > 90.0
                     || zoom < 2.0 || zoom > 22.0)
@@ -417,8 +423,8 @@ int main(int argc, char* argv[])
 
                 activeOutputWidth = requestedWidth;
                 activeOutputHeight = requestedHeight;
-                activeOverscanX = kLabelOverscanPixels;
-                activeOverscanY = kLabelOverscanPixels;
+                activeOverscanX = requestedOverscan;
+                activeOverscanY = requestedOverscan;
                 const auto renderWidth = requestedWidth + activeOverscanX * 2;
                 const auto renderHeight = requestedHeight + activeOverscanY * 2;
                 widget->resize(renderWidth, renderHeight);
@@ -449,6 +455,7 @@ int main(int argc, char* argv[])
                         << " render=" << renderWidth << "x" << renderHeight
                         << " overscan=" << activeOverscanX << "x" << activeOverscanY
                         << " displayScale=" << displayScale
+                        << " overscanScale=" << (static_cast<double>(activeOverscanX) / kLabelOverscanPixels)
                         << " pixelScaleXY=" << pixelScaleX << "x" << pixelScaleY
                         << " effectiveScaleXY=" << effectivePixelScaleX << "x" << effectivePixelScaleY
                         << " zoom=" << zoom
