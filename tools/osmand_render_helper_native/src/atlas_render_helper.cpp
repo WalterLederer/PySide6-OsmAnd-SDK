@@ -382,10 +382,15 @@ int main(int argc, char* argv[])
                 // this, OsmAnd renders a wider geographic area into the same
                 // MapLibre tile footprint and neighbouring tiles do not align.
                 const auto pixelScale = static_cast<double>(requestedWidth) / 256.0;
-                // Display density changes raster rendering density, not the
-                // geographic extent represented by this frame. Only compensate
-                // for the 2x frame size relative to MapLibre's 256px tile.
-                const auto zoomCompensation = std::log2(pixelScale);
+                // The native widget keeps its dimensions in logical pixels,
+                // while syncRendererViewport() applies displayScale through
+                // setViewportScale(). That scale enlarges the renderer's
+                // effective viewport as well, so both factors must be included
+                // when matching the geographic extent of a 256px MapLibre tile.
+                // For a 512px frame at 1.5x density, the effective viewport is
+                // 768px and therefore needs log2(3) zoom levels of compensation.
+                const auto effectivePixelScale = pixelScale * displayScale;
+                const auto zoomCompensation = std::log2(effectivePixelScale);
                 widget->setZoomLevel(zoom + zoomCompensation);
                 widget->setCenterLonLat(longitude, latitude);
                 widget->update();
