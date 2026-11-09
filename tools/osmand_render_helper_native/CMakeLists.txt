@@ -54,7 +54,7 @@ list(PREPEND CMAKE_PREFIX_PATH "${QT_ROOT}")
 set(Qt5Core_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Qt5Core" CACHE PATH "Qt5Core compatibility shim")
 set(Qt5Network_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Qt5Network" CACHE PATH "Qt5Network compatibility shim")
 
-find_package(Qt6 REQUIRED COMPONENTS Core Network Gui Widgets OpenGL OpenGLWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Gui Widgets OpenGL OpenGLWidgets Sql)
 
 set(OSMAND_ROOT "${OSMAND_VENDOR_ROOT}" CACHE PATH "Synthetic OsmAnd root that exposes core and core-legacy side by side")
 set(OSMAND_OWN_SHIPPED_QT OFF CACHE BOOL "Use system Qt instead of OsmAnd-shipped Qt")
@@ -187,6 +187,7 @@ target_link_libraries(osmand_render_helper
         Qt6::Network
         Qt6::Gui
         Qt6::Widgets
+        Qt6::Sql
         dwrite
 )
 
