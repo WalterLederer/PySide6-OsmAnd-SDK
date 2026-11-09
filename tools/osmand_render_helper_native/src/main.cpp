@@ -609,7 +609,7 @@ QJsonObject handleRenderCommand(const QJsonObject& command, OsmAndRenderHelperSe
 
 
 bool readHillshadeTilePng(
-    const QString& databasePath, int z, int x, int y,
+    const QString& databasePath, int z, int x, int y, int s,
     QByteArray& pngData, QString& errorMessage)
 {
     if (!QFileInfo::exists(databasePath)) {
@@ -630,10 +630,11 @@ bool readHillshadeTilePng(
         } else {
             QSqlQuery query(database);
             query.prepare(QStringLiteral(
-                "SELECT image FROM tiles WHERE z = :z AND x = :x AND y = :y LIMIT 1"));
+                "SELECT image FROM tiles WHERE z = :z AND x = :x AND y = :y AND s = :s LIMIT 1"));
             query.bindValue(QStringLiteral(":z"), z);
             query.bindValue(QStringLiteral(":x"), x);
             query.bindValue(QStringLiteral(":y"), y);
+            query.bindValue(QStringLiteral(":s"), s);
             if (!query.exec()) {
                 errorMessage = QStringLiteral("Hillshade tile query failed (expected tiles(z,x,y,image)): %1")
                     .arg(query.lastError().text());
@@ -769,16 +770,16 @@ int runOneShotHillshadeTile(const QStringList& arguments)
     }
 
     bool ok = false;
-    const auto z = arguments.at(2).toInt(&ok);
+    const auto z = arguments.at(3).toInt(&ok);
     if (!ok) { std::cerr << "invalid z value" << std::endl; return 2; }
-    const auto x = arguments.at(3).toInt(&ok);
+    const auto x = arguments.at(4).toInt(&ok);
     if (!ok) { std::cerr << "invalid x value" << std::endl; return 2; }
-    const auto y = arguments.at(4).toInt(&ok);
+    const auto y = arguments.at(5).toInt(&ok);
     if (!ok) { std::cerr << "invalid y value" << std::endl; return 2; }
 
     QByteArray pngData;
     QString errorMessage;
-    if (!readHillshadeTilePng(arguments.at(2), z, x, y, pngData, errorMessage)) {
+    if (!readHillshadeTilePng(arguments.at(2), z, x, y, 0, pngData, errorMessage)) {
         std::cerr << errorMessage.toUtf8().constData() << std::endl;
         return 1;
     }
@@ -918,6 +919,7 @@ int main(int argc, char** argv)
                 command.value(QStringLiteral("z")).toInt(-1),
                 command.value(QStringLiteral("x")).toInt(),
                 command.value(QStringLiteral("y")).toInt(),
+                command.value(QStringLiteral("s")).toInt(0),
                 pngData, errorMessage);
             const auto payload = ok ? pngData : errorMessage.toUtf8();
             writeBinaryHillshadeResponse(requestId, ok ? 0u : 1u, payload);
