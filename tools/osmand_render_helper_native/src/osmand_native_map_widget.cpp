@@ -430,11 +430,22 @@ bool OsmAndNativeMapWidget::grabFrameRgba(
 
 void OsmAndNativeMapWidget::initializeGL()
 {
+    const bool debugRenderPhases = std::getenv("OSMAND_ATLAS_DEBUG_RENDER_PHASES") != nullptr;
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] initializeGL begin contextValid="
+                  << (context() && context()->isValid()) << std::endl;
+
     _openGlInitializationTimer.start();
     connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &OsmAndNativeMapWidget::cleanupRenderer, Qt::DirectConnection);
-    if (!ensureRenderer() && _initError.isEmpty())
+    const auto rendererReady = ensureRenderer();
+    if (!rendererReady && _initError.isEmpty())
         _initError = QStringLiteral("Failed to initialize the native OsmAnd renderer");
     _openGlInitializationMs = _openGlInitializationTimer.elapsed();
+
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] initializeGL end rendererReady="
+                  << rendererReady << " elapsedMs=" << _openGlInitializationMs
+                  << " error=" << _initError.toStdString() << std::endl;
 }
 
 qint64 OsmAndNativeMapWidget::openGlInitializationMs() const
@@ -465,6 +476,14 @@ void OsmAndNativeMapWidget::showEvent(QShowEvent* event)
 
 void OsmAndNativeMapWidget::paintGL()
 {
+    const bool debugRenderPhases = std::getenv("OSMAND_ATLAS_DEBUG_RENDER_PHASES") != nullptr;
+    static std::uint64_t paintSequence = 0;
+    const auto paintId = ++paintSequence;
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] paintGL begin frame=" << paintId
+                  << " size=" << width() << "x" << height()
+                  << " contextValid=" << (context() && context()->isValid()) << std::endl;
+
     if (auto* functions = context() ? context()->functions() : nullptr)
     {
         const auto hadScissor = functions->glIsEnabled(kGlScissorTest) == GL_TRUE;
@@ -480,15 +499,32 @@ void OsmAndNativeMapWidget::paintGL()
 
     if (!ensureRenderer())
     {
+        if (debugRenderPhases)
+            std::cerr << "[OsmAnd Atlas][render-phase] paintGL renderer-not-ready frame="
+                      << paintId << " error=" << _initError.toStdString() << std::endl;
         return;
     }
 
     syncRendererViewport(false);
     syncRendererCamera(false);
 
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] update begin frame=" << paintId << std::endl;
     _mapRenderer->update();
-    if (_mapRenderer->prepareFrame())
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] prepareFrame begin frame=" << paintId << std::endl;
+    const auto framePrepared = _mapRenderer->prepareFrame();
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] prepareFrame end frame=" << paintId
+                  << " prepared=" << framePrepared << std::endl;
+    if (framePrepared)
+    {
+        if (debugRenderPhases)
+            std::cerr << "[OsmAnd Atlas][render-phase] renderFrame begin frame=" << paintId << std::endl;
         _mapRenderer->renderFrame();
+        if (debugRenderPhases)
+            std::cerr << "[OsmAnd Atlas][render-phase] renderFrame end frame=" << paintId << std::endl;
+    }
 
     if (std::getenv("OSMAND_ATLAS_DEBUG_GEOMETRY") != nullptr)
     {
@@ -520,6 +556,11 @@ void OsmAndNativeMapWidget::paintGL()
 
     if (_firstFrameMs < 0 && _openGlInitializationTimer.isValid())
         _firstFrameMs = _openGlInitializationTimer.elapsed();
+
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] paintGL end frame=" << paintId
+                  << " rendererIdle=" << _mapRenderer->isIdle()
+                  << " frameInvalidated=" << _mapRenderer->isFrameInvalidated() << std::endl;
 
     if (!_mapRenderer->isIdle() || _mapRenderer->isFrameInvalidated())
         requestFullUpdate();
