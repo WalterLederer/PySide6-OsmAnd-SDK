@@ -19,6 +19,9 @@
 #include <QLocale>
 #include <QStringList>
 #include <QXmlStreamReader>
+#include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
 
 #include <SkBitmap.h>
 #include <SkCanvas.h>
@@ -604,6 +607,73 @@ QJsonObject handleRenderCommand(const QJsonObject& command, OsmAndRenderHelperSe
     return makeOkResponse();
 }
 
+
+bool readHillshadeTilePng(
+    const QString& databasePath, int z, int x, int y,
+    QByteArray& pngData, QString& errorMessage)
+{
+    if (!QFileInfo::exists(databasePath)) {
+        errorMessage = QStringLiteral("Hillshade database does not exist: %1").arg(databasePath);
+        return false;
+    }
+
+    static quint64 connectionCounter = 0;
+    const auto connectionName = QStringLiteral("hillshade_%1").arg(++connectionCounter);
+    {
+        auto database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        database.setDatabaseName(databasePath);
+        database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (!database.open()) {
+            errorMessage = QStringLiteral("Unable to open Hillshade SQLite database read-only: %1")
+                .arg(database.lastError().text());
+            database.close();
+        } else {
+            QSqlQuery query(database);
+            query.prepare(QStringLiteral(
+                "SELECT image FROM tiles WHERE z = :z AND x = :x AND y = :y LIMIT 1"));
+            query.bindValue(QStringLiteral(":z"), z);
+            query.bindValue(QStringLiteral(":x"), x);
+            query.bindValue(QStringLiteral(":y"), y);
+            if (!query.exec()) {
+                errorMessage = QStringLiteral("Hillshade tile query failed (expected tiles(z,x,y,image)): %1")
+                    .arg(query.lastError().text());
+            } else if (!query.next()) {
+                errorMessage = QStringLiteral("Hillshade tile not found for database coordinates z=%1, x=%2, y=%3")
+                    .arg(z).arg(x).arg(y);
+            } else {
+                pngData = query.value(0).toByteArray();
+                static const QByteArray pngSignature:::("PNG
+
+", 8);
+                if (pngData.size() < 8 || pngData.left(8) != pngSignature) {
+                    pngData.clear();
+                    errorMessage = QStringLiteral("Hillshade tile payload is not a PNG image");
+                }
+            }
+            query.finish();
+            database.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+    return !pngData.isEmpty();
+}
+
+void writeBinaryHillshadeResponse(quint32 requestId, quint32 status, const QByteArray& payload)
+{
+    QByteArray header;
+    header.reserve(24);
+    header.append("OSMH", 4);
+    appendLittleEndian(header, 1, 2);
+    appendLittleEndian(header, 24, 2);
+    appendLittleEndian(header, status, 4);
+    appendLittleEndian(header, requestId, 4);
+    appendLittleEndian(header, static_cast<quint64>(payload.size()), 8);
+    std::cout.write(header.constData(), header.size());
+    if (!payload.isEmpty())
+        std::cout.write(payload.constData(), payload.size());
+    std::cout.flush();
+}
+
 QJsonObject dispatchCommand(const QJsonObject& command, OsmAndRenderHelperSession& session, bool& shouldExit)
 {
     shouldExit = false;
@@ -689,6 +759,38 @@ int runOneShotRender(const QStringList& arguments)
     }
 
     session.shutdown();
+    return 0;
+}
+
+
+int runOneShotHillshadeTile(const QStringList& arguments)
+{
+    if (arguments.size() != 7) {
+        std::cerr << "usage: osmand_render_helper --read-hillshade-tile <database> <z> <x> <y> <output.png>" << std::endl;
+        return 2;
+    }
+
+    bool ok = false;
+    const auto z = arguments.at(2).toInt(&ok);
+    if (!ok) { std::cerr << "invalid z value" << std::endl; return 2; }
+    const auto x = arguments.at(3).toInt(&ok);
+    if (!ok) { std::cerr << "invalid x value" << std::endl; return 2; }
+    const auto y = arguments.at(4).toInt(&ok);
+    if (!ok) { std::cerr << "invalid y value" << std::endl; return 2; }
+
+    QByteArray pngData;
+    QString errorMessage;
+    if (!readHillshadeTilePng(arguments.at(2), z, x, y, pngData, errorMessage)) {
+        std::cerr << errorMessage.toUtf8().constData() << std::endl;
+        return 1;
+    }
+
+    QFile outputFile(arguments.at(6));
+    if (!outputFile.open(QIODevice::WriteOnly | QIODevice::Truncate)
+        || outputFile.write(pngData) != pngData.size()) {
+        std::cerr << "failed to write Hillshade PNG: " << arguments.at(6).toUtf8().constData() << std::endl;
+        return 1;
+    }
     return 0;
 }
 
@@ -783,6 +885,8 @@ int main(int argc, char** argv)
             return runOneShotRender(arguments);
         if (command == QLatin1String("--dump-captions"))
             return runOneShotCaptionDump(arguments);
+        if (command == QLatin1String("--read-hillshade-tile"))
+            return runOneShotHillshadeTile(arguments);
 
         std::cerr << "unknown command line mode: " << command.toUtf8().constData() << std::endl;
         return 2;
@@ -807,6 +911,20 @@ int main(int argc, char** argv)
             continue;
         }
         const auto command = document.object();
+        if (command.value(QStringLiteral("command")).toString() == QLatin1String("hillshade_tile")) {
+            const auto requestId = static_cast<quint32>(command.value(QStringLiteral("request_id")).toVariant().toULongLong());
+            QByteArray pngData;
+            QString errorMessage;
+            const auto ok = readHillshadeTilePng(
+                command.value(QStringLiteral("database_path")).toString(),
+                command.value(QStringLiteral("z")).toInt(-1),
+                command.value(QStringLiteral("x")).toInt(),
+                command.value(QStringLiteral("y")).toInt(),
+                pngData, errorMessage);
+            const auto payload = ok ? pngData : errorMessage.toUtf8();
+            writeBinaryHillshadeResponse(requestId, ok ? 0u : 1u, payload);
+            continue;
+        }
         if (command.value(QStringLiteral("command")).toString() == QLatin1String("render")) {
             const auto requestId = static_cast<quint32>(command.value(QStringLiteral("request_id")).toVariant().toULongLong());
             QByteArray pixels;
