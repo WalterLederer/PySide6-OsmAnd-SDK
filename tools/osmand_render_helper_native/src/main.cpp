@@ -642,9 +642,7 @@ bool readHillshadeTilePng(
                     .arg(z).arg(x).arg(y);
             } else {
                 pngData = query.value(0).toByteArray();
-                static const QByteArray pngSignature:::("PNG
-
-", 8);
+                static const QByteArray pngSignature = QByteArray::fromHex("89504e470d0a1a0a");
                 if (pngData.size() < 8 || pngData.left(8) != pngSignature) {
                     pngData.clear();
                     errorMessage = QStringLiteral("Hillshade tile payload is not a PNG image");
