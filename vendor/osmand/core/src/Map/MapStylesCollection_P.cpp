@@ -141,6 +141,14 @@ std::shared_ptr<const OsmAnd::ResolvedMapStyle> OsmAnd::MapStylesCollection_P::g
         QReadLocker scopedLocker(&_stylesLock);
 
         auto style = getEditableStyleByName_noSync(name);
+        if (!style)
+        {
+            LogPrintf(LogSeverityLevel::Error,
+                "Failed to resolve style '%s': style was not registered",
+                qPrintable(name));
+            return nullptr;
+        }
+
         while (style)
         {
             stylesChain.push_back(style);
