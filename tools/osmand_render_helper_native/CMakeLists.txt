@@ -236,6 +236,7 @@ target_link_libraries(osmand_atlas_render_helper
         Qt6::Widgets
         Qt6::OpenGL
         Qt6::OpenGLWidgets
+        Qt6::Sql
         dwrite
 )
 target_link_options(osmand_atlas_render_helper
