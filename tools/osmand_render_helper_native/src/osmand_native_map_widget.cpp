@@ -777,6 +777,10 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
 
 bool OsmAndNativeMapWidget::ensureRenderer()
 {
+    const bool debugRenderPhases = std::getenv("OSMAND_ATLAS_DEBUG_RENDER_PHASES") != nullptr;
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] ensureRenderer begin style="
+                  << _styleName.toStdString() << std::endl;
     if (_mapRenderer)
         return true;
     if (!_resourcesReady)
@@ -822,7 +826,12 @@ bool OsmAndNativeMapWidget::ensureRenderer()
         _mapPrimitivesProvider,
         true,
         true);
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] providers-created" << std::endl;
     _mapRenderer = OsmAnd::createMapRenderer(OsmAnd::MapRendererClass::AtlasMapRenderer_OpenGL2plus);
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] createMapRenderer complete available="
+                  << static_cast<bool>(_mapRenderer) << std::endl;
     if (!_mapRenderer)
     {
         _initError = QStringLiteral("No supported OsmAnd renderer found");
@@ -856,12 +865,16 @@ bool OsmAndNativeMapWidget::ensureRenderer()
                 },
                 Qt::QueuedConnection);
         };
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] renderer-setup begin" << std::endl;
     if (!_mapRenderer->setup(setupOptions))
     {
         _initError = QStringLiteral("Failed to setup the OsmAnd renderer");
         _mapRenderer.reset();
         return false;
     }
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] renderer-setup end" << std::endl;
 
     const auto rendererConfiguration = std::static_pointer_cast<OsmAnd::AtlasMapRendererConfiguration>(_mapRenderer->getConfiguration());
     rendererConfiguration->referenceTileSizeOnScreenInPixels = static_cast<float>(kReferenceTileSize);
@@ -874,12 +887,16 @@ bool OsmAndNativeMapWidget::ensureRenderer()
     syncRendererViewport(true);
     syncRendererCamera(true);
 
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] initializeRendering begin" << std::endl;
     if (!_mapRenderer->initializeRendering(true))
     {
         _initError = QStringLiteral("Failed to initialize native OsmAnd rendering");
         _mapRenderer.reset();
         return false;
     }
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] initializeRendering end" << std::endl;
 
     // The Atlas helper renders individual XYZ tiles. The renderer's inferred
     // minimum zoom can be raised by the selected OBF data set (for example to
@@ -900,8 +917,14 @@ bool OsmAndNativeMapWidget::ensureRenderer()
     _zoomLevel = std::clamp(_zoomLevel, _minZoomLevel, _maxZoomLevel);
     _mapRenderer->setDetailedDistance(kStableDetailedDistance, true);
     _mapRenderer->setSymbolsOpacity(kStableSymbolsOpacity, true);
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] caption-diagnostics begin" << std::endl;
     maybeDumpCaptionDiagnostics();
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] caption-diagnostics end" << std::endl;
     syncRendererCamera(true);
+    if (debugRenderPhases)
+        std::cerr << "[OsmAnd Atlas][render-phase] ensureRenderer end" << std::endl;
     return true;
 }
 
