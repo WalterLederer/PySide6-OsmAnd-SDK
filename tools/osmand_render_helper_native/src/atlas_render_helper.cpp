@@ -8,6 +8,9 @@
 #include <QJsonObject>
 #include <QMetaObject>
 #include <QTimer>
+#include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
 
 #include <algorithm>
 #include <array>
@@ -186,6 +189,126 @@ void writeRgbaFrame(
     if (!rgba.isEmpty())
         writeProtocolBytes(rgba.constData(), static_cast<std::size_t>(rgba.size()));
 }
+
+bool readHillshadeTilePng(
+    const QString& databasePath, int z, int x, int y, int s,
+    QByteArray& pngData, QString& errorMessage)
+{
+    if (!QFileInfo::exists(databasePath))
+    {
+        errorMessage = QStringLiteral("Hillshade database does not exist: %1").arg(databasePath);
+        return false;
+    }
+
+    static quint64 connectionCounter = 0;
+    const auto connectionName = QStringLiteral("atlas_hillshade_%1").arg(++connectionCounter);
+    {
+        auto database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        database.setDatabaseName(databasePath);
+        database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (!database.open())
+        {
+            errorMessage = QStringLiteral("Unable to open Hillshade SQLite database read-only: %1")
+                .arg(database.lastError().text());
+            database.close();
+        }
+        else
+        {
+            QSqlQuery query(database);
+            query.prepare(QStringLiteral(
+                "SELECT image FROM tiles WHERE z = :z AND x = :x AND y = :y AND s = :s LIMIT 1"));
+            query.bindValue(QStringLiteral(":z"), z);
+            query.bindValue(QStringLiteral(":x"), x);
+            query.bindValue(QStringLiteral(":y"), y);
+            query.bindValue(QStringLiteral(":s"), s);
+            if (!query.exec())
+            {
+                errorMessage = QStringLiteral("Hillshade tile query failed: %1").arg(query.lastError().text());
+            }
+            else if (!query.next())
+            {
+                errorMessage = QStringLiteral("Hillshade tile not found for z=%1, x=%2, y=%3, s=%4")
+                    .arg(z).arg(x).arg(y).arg(s);
+            }
+            else
+            {
+                pngData = query.value(0).toByteArray();
+                static const QByteArray pngSignature = QByteArray::fromHex("89504e470d0a1a0a");
+                if (pngData.size() < 8 || pngData.left(8) != pngSignature)
+                {
+                    pngData.clear();
+                    errorMessage = QStringLiteral("Hillshade tile payload is not a PNG image");
+                }
+            }
+            query.finish();
+            database.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+    return !pngData.isEmpty();
+}
+
+void writeHillshadeResponse(std::uint32_t requestId, std::uint32_t status, const QByteArray& payload)
+{
+    std::array<unsigned char, 24> header{};
+    header[0] = 'O'; header[1] = 'S'; header[2] = 'M'; header[3] = 'H';
+    writeU16(*reinterpret_cast<std::array<unsigned char, kHeaderSize>*>(header.data()), 4, kProtocolVersion);
+    // OSMH has a compact 24-byte header; encode all integers explicitly.
+    header[4] = 1; header[5] = 0;
+    header[6] = 24; header[7] = 0;
+    for (int i = 0; i < 4; ++i)
+    {
+        header[8 + i] = static_cast<unsigned char>((status >> (i * 8)) & 0xff);
+        header[12 + i] = static_cast<unsigned char>((requestId >> (i * 8)) & 0xff);
+    }
+    const auto length = static_cast<std::uint64_t>(payload.size());
+    for (int i = 0; i < 8; ++i)
+        header[16 + i] = static_cast<unsigned char>((length >> (i * 8)) & 0xff);
+    writeProtocolBytes(header.data(), header.size());
+    if (!payload.isEmpty())
+        writeProtocolBytes(payload.constData(), static_cast<std::size_t>(payload.size()));
+}
+
+int runHillshadeWorker()
+{
+    std::string line;
+    while (std::getline(std::cin, line))
+    {
+        const auto document = QJsonDocument::fromJson(QByteArray::fromStdString(line));
+        if (!document.isObject())
+        {
+            writeHillshadeResponse(0, 1, QByteArrayLiteral("Invalid JSON request"));
+            continue;
+        }
+        const auto command = document.object();
+        const auto type = command.value(QStringLiteral("type")).toString();
+        if (type == QLatin1String("quit"))
+            return 0;
+        if (type != QLatin1String("hillshade_tile"))
+        {
+            const auto message = QStringLiteral("Unsupported Hillshade command: %1").arg(type).toUtf8();
+            writeHillshadeResponse(0, 1, message);
+            continue;
+        }
+
+        const auto idValue = command.value(QStringLiteral("requestId"));
+        const auto requestId = idValue.isDouble() && idValue.toDouble() >= 0
+            && idValue.toDouble() <= std::numeric_limits<std::uint32_t>::max()
+            ? static_cast<std::uint32_t>(idValue.toDouble()) : 0u;
+        QByteArray pngData;
+        QString errorMessage;
+        const auto ok = readHillshadeTilePng(
+            command.value(QStringLiteral("databasePath")).toString(),
+            command.value(QStringLiteral("z")).toInt(-1),
+            command.value(QStringLiteral("x")).toInt(-1),
+            command.value(QStringLiteral("y")).toInt(-1),
+            command.value(QStringLiteral("s")).toInt(0),
+            pngData, errorMessage);
+        writeHillshadeResponse(requestId, ok ? 0u : 1u, ok ? pngData : errorMessage.toUtf8());
+    }
+    return 0;
+}
+
 }
 
 int main(int argc, char* argv[])
@@ -195,6 +318,9 @@ int main(int argc, char* argv[])
         std::cerr << "[atlas-helper] failed to separate protocol output from log output" << std::endl;
         return 4;
     }
+
+    if (argc == 2 && std::string(argv[1]) == "--hillshade-worker")
+        return runHillshadeWorker();
 
     if (argc != 5)
     {
