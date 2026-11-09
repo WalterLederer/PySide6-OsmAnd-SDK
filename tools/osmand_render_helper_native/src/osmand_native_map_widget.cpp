@@ -683,6 +683,21 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
     if (!OsmAndCoreRuntime::instance().acquire(_configuration.resourcesRoot, errorMessage))
         return false;
 
+    const bool debugStyleLoad = std::getenv("OSMAND_ATLAS_DEBUG_STYLE_LOAD") != nullptr;
+    if (debugStyleLoad)
+    {
+        const QFileInfo selectedStyleInfo(_configuration.stylePath);
+        const QFileInfo resourcesInfo(_configuration.resourcesRoot);
+        std::cerr << "[OsmAnd Atlas][style-load] begin"
+                  << " selectedPath=" << selectedStyleInfo.absoluteFilePath().toStdString()
+                  << " selectedCanonical=" << selectedStyleInfo.canonicalFilePath().toStdString()
+                  << " selectedExists=" << selectedStyleInfo.exists()
+                  << " selectedSize=" << selectedStyleInfo.size()
+                  << " resourcesRoot=" << resourcesInfo.absoluteFilePath().toStdString()
+                  << " resourcesCanonical=" << resourcesInfo.canonicalFilePath().toStdString()
+                  << std::endl;
+    }
+
     _stylesCollection = std::make_shared<OsmAnd::MapStylesCollection>();
 
     // Load the complete style inheritance chain from base to selected style.
@@ -719,7 +734,23 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
             return false;
         }
 
-        const auto dependency = styleXml.attributes().value(QStringLiteral("depends")).toString().trimmed();
+        const auto styleAttributes = styleXml.attributes();
+        const auto declaredStyleName = styleAttributes.value(QStringLiteral("name")).toString().trimmed();
+        const auto dependency = styleAttributes.value(QStringLiteral("depends")).toString().trimmed();
+        const auto declaredDefaultColor = styleAttributes.value(QStringLiteral("defaultColor")).toString().trimmed();
+        if (debugStyleLoad)
+        {
+            const QFileInfo styleInfo(currentStylePath);
+            std::cerr << "[OsmAnd Atlas][style-load] dependency-scan"
+                      << " path=" << styleInfo.absoluteFilePath().toStdString()
+                      << " canonical=" << styleInfo.canonicalFilePath().toStdString()
+                      << " exists=" << styleInfo.exists()
+                      << " size=" << styleInfo.size()
+                      << " declaredName=" << declaredStyleName.toStdString()
+                      << " depends=" << (dependency.isEmpty() ? "<none>" : dependency.toStdString())
+                      << " defaultColor=" << (declaredDefaultColor.isEmpty() ? "<none>" : declaredDefaultColor.toStdString())
+                      << std::endl;
+        }
         if (dependency.isEmpty())
             break;
 
@@ -735,12 +766,30 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
     }
 
     std::reverse(styleChain.begin(), styleChain.end());
-    for (const auto& stylePath : styleChain)
+    if (debugStyleLoad)
     {
-        if (!_stylesCollection->addStyleFromFile(stylePath))
+        std::cerr << "[OsmAnd Atlas][style-load] inheritance-chain count=" << styleChain.size() << std::endl;
+        for (int index = 0; index < styleChain.size(); ++index)
+            std::cerr << "[OsmAnd Atlas][style-load] chain[" << index << "]="
+                      << QFileInfo(styleChain.at(index)).absoluteFilePath().toStdString() << std::endl;
+    }
+
+    for (int index = 0; index < styleChain.size(); ++index)
+    {
+        const auto& stylePath = styleChain.at(index);
+        const auto addSucceeded = _stylesCollection->addStyleFromFile(stylePath);
+        if (debugStyleLoad)
+            std::cerr << "[OsmAnd Atlas][style-load] addStyleFromFile"
+                      << " index=" << index
+                      << " path=" << QFileInfo(stylePath).absoluteFilePath().toStdString()
+                      << " success=" << addSucceeded
+                      << std::endl;
+        if (!addSucceeded)
         {
             OsmAndCoreRuntime::instance().release();
             errorMessage = QStringLiteral("Unable to load rendering style or dependency: %1").arg(stylePath);
+            if (debugStyleLoad)
+                std::cerr << "[OsmAnd Atlas][style-load] FAILED " << errorMessage.toStdString() << std::endl;
             return false;
         }
     }
@@ -771,6 +820,14 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
     if (_locale.isEmpty())
         _locale = QStringLiteral("en");
 
+    if (debugStyleLoad)
+        std::cerr << "[OsmAnd Atlas][style-load] selected-style-key"
+                  << " declaredOrFallbackName=" << _styleName.toStdString()
+                  << " filenameStem=" << QFileInfo(_configuration.stylePath).completeBaseName().toStdString()
+                  << " locale=" << _locale.toStdString()
+                  << " resourcesReady=true"
+                  << std::endl;
+
     _resourcesReady = true;
     return true;
 }
@@ -787,9 +844,17 @@ bool OsmAndNativeMapWidget::ensureRenderer()
         return false;
 
     const auto mapStyle = _stylesCollection->getResolvedStyleByName(_styleName);
+    if (debugRenderPhases || std::getenv("OSMAND_ATLAS_DEBUG_STYLE_LOAD") != nullptr)
+        std::cerr << "[OsmAnd Atlas][style-load] resolve"
+                  << " requestedName=" << _styleName.toStdString()
+                  << " resolved=" << static_cast<bool>(mapStyle)
+                  << " resolvedPointer=" << static_cast<const void*>(mapStyle.get())
+                  << std::endl;
     if (!mapStyle)
     {
         _initError = QStringLiteral("Unable to resolve rendering style: %1").arg(_styleName);
+        if (std::getenv("OSMAND_ATLAS_DEBUG_STYLE_LOAD") != nullptr)
+            std::cerr << "[OsmAnd Atlas][style-load] FAILED " << _initError.toStdString() << std::endl;
         return false;
     }
 
