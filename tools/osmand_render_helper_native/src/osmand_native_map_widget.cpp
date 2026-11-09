@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstdint>
 #include <cmath>
 #include <memory>
 #include <iostream>
