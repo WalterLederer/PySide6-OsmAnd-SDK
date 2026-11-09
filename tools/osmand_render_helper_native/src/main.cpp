@@ -1,5 +1,6 @@
 #include "file_system_core_resources_provider.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -17,6 +18,7 @@
 #include <QJsonObject>
 #include <QLocale>
 #include <QStringList>
+#include <QXmlStreamReader>
 
 #include <SkBitmap.h>
 #include <SkCanvas.h>
@@ -112,11 +114,65 @@ public:
         }
 
         const auto stylesCollection = std::make_shared<OsmAnd::MapStylesCollection>();
-        if (!stylesCollection->addStyleFromFile(stylePath))
+
+        // Load the complete style inheritance chain from base to selected style.
+        // Specialized styles such as offroad.render.xml depend on topo.render.xml;
+        // loading only the selected XML leaves its parent selectors unresolved.
+        QStringList styleChain;
+        QString currentStylePath = stylePath;
+        const auto stylesDirectory = QDir(resourcesRoot).filePath(QStringLiteral("rendering_styles"));
+        while (!currentStylePath.isEmpty())
         {
-            OsmAnd::ReleaseCore();
-            errorMessage = QStringLiteral("Unable to load rendering style: %1").arg(stylePath);
-            return false;
+            if (styleChain.contains(currentStylePath))
+            {
+                OsmAnd::ReleaseCore();
+                errorMessage = QStringLiteral("Circular OsmAnd rendering-style dependency: %1").arg(currentStylePath);
+                return false;
+            }
+            styleChain.append(currentStylePath);
+
+            QFile currentStyleFile(currentStylePath);
+            if (!currentStyleFile.open(QIODevice::ReadOnly | QIODevice::Text))
+            {
+                OsmAnd::ReleaseCore();
+                errorMessage = QStringLiteral("Unable to read rendering style: %1").arg(currentStylePath);
+                return false;
+            }
+
+            QXmlStreamReader styleXml(&currentStyleFile);
+            while (!styleXml.atEnd() && !styleXml.isStartElement())
+                styleXml.readNext();
+            if (!styleXml.isStartElement() || styleXml.name() != QStringLiteral("renderingStyle"))
+            {
+                OsmAnd::ReleaseCore();
+                errorMessage = QStringLiteral("Invalid OsmAnd rendering-style root element: %1").arg(currentStylePath);
+                return false;
+            }
+
+            const auto dependency = styleXml.attributes().value(QStringLiteral("depends")).toString().trimmed();
+            if (dependency.isEmpty())
+                break;
+
+            const auto dependencyPath = QDir(stylesDirectory).filePath(dependency + QStringLiteral(".render.xml"));
+            if (!QFileInfo::exists(dependencyPath))
+            {
+                OsmAnd::ReleaseCore();
+                errorMessage = QStringLiteral("Rendering style dependency '%1' required by '%2' was not found: %3")
+                    .arg(dependency, currentStylePath, dependencyPath);
+                return false;
+            }
+            currentStylePath = dependencyPath;
+        }
+
+        std::reverse(styleChain.begin(), styleChain.end());
+        for (const auto& inheritedStylePath : styleChain)
+        {
+            if (!stylesCollection->addStyleFromFile(inheritedStylePath))
+            {
+                OsmAnd::ReleaseCore();
+                errorMessage = QStringLiteral("Unable to load rendering style or dependency: %1").arg(inheritedStylePath);
+                return false;
+            }
         }
 
         const auto obfsCollection = std::make_shared<OsmAnd::ObfsCollection>();
@@ -128,7 +184,10 @@ public:
         _obfsCollection = obfsCollection;
         _resourcesRoot = resourcesRoot;
         _stylePath = stylePath;
-        _styleName = QFileInfo(stylePath).baseName();
+        // MapStylesCollection registers styles by filename stem, not by the XML "name" title.
+        _styleName = QFileInfo(stylePath).fileName();
+        if (_styleName.endsWith(QStringLiteral(".render.xml"), Qt::CaseInsensitive))
+            _styleName.chop(QStringLiteral(".render.xml").size());
         _nightMode = nightMode;
         _locale = QLocale::system().name().section(QLatin1Char('_'), 0, 0).toLower();
         if (_locale.isEmpty())
