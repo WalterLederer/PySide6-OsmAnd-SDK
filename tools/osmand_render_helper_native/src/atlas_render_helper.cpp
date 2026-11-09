@@ -1,6 +1,7 @@
 #include "osmand_native_map_widget.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -320,7 +321,10 @@ int main(int argc, char* argv[])
     }
 
     if (argc == 2 && std::string(argv[1]) == "--hillshade-worker")
+    {
+        QCoreApplication app(argc, argv);
         return runHillshadeWorker();
+    }
 
     if (argc != 5)
     {
