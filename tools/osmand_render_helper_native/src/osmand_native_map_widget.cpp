@@ -794,16 +794,34 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
         }
     }
 
+    _obfsCollection = std::make_shared<OsmAnd::ObfsCollection>();
+    for (const auto& obfPath : _configuration.obfPaths)
+        _obfsCollection->addFile(obfPath);
+
+    // MapStylesCollection registers each style by its filename stem
+    // (e.g. offroad.render.xml -> "offroad"). The XML "name" attribute is
+    // only the display title and must never be used as the registry key.
+    _styleName = QFileInfo(_configuration.stylePath).fileName();
+    if (_styleName.endsWith(QStringLiteral(".render.xml"), Qt::CaseInsensitive))
+        _styleName.chop(QStringLiteral(".render.xml").size());
+    _locale = QLocale::system().name().section(QLatin1Char('_'), 0, 0).toLower();
+    if (_locale.isEmpty())
+        _locale = QStringLiteral("en");
+
+    if (debugStyleLoad)
+        std::cerr << "[OsmAnd Atlas][style-load] selected-style-key"
+                  << " declaredOrFallbackName=" << _styleName.toStdString()
+                  << " filenameStem=" << QFileInfo(_configuration.stylePath).completeBaseName().toStdString()
+                  << " locale=" << _locale.toStdString()
+                  << " resourcesReady=true"
+                  << std::endl;
+
     if (debugStyleLoad)
     {
-        const auto selectedFileName = QFileInfo(_configuration.stylePath).fileName();
-        QString selectedFileKey = selectedFileName;
-        if (selectedFileKey.endsWith(QStringLiteral(".render.xml"), Qt::CaseInsensitive))
-            selectedFileKey.chop(QStringLiteral(".render.xml").size());
-
+        const auto selectedFileKey = _styleName;
         std::cerr << "[OsmAnd Atlas][style-load] registry-snapshot"
                   << " selectedFileKey=" << selectedFileKey.toStdString()
-                  << " selectedXmlTitle=" << _styleName.toStdString()
+                  << " selectedXmlTitleIsDisplayOnly=true"
                   << std::endl;
 
         const auto registeredStyles = _stylesCollection->getCollection();
@@ -819,61 +837,18 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
                       << std::endl;
         }
 
-        const auto byFileKey = _stylesCollection->getStyleByName(selectedFileKey);
-        const auto byXmlTitle = _stylesCollection->getStyleByName(_styleName);
+        const auto selectedStyle = _stylesCollection->getStyleByName(selectedFileKey);
         std::cerr << "[OsmAnd Atlas][style-load] selected-style-lookup"
-                  << " byFileKey=" << static_cast<bool>(byFileKey)
-                  << " fileKeyPointer=" << static_cast<const void*>(byFileKey.get())
-                  << " byXmlTitle=" << static_cast<bool>(byXmlTitle)
-                  << " xmlTitlePointer=" << static_cast<const void*>(byXmlTitle.get())
+                  << " registered=" << static_cast<bool>(selectedStyle)
+                  << " pointer=" << static_cast<const void*>(selectedStyle.get())
                   << std::endl;
-        if (byFileKey)
-            std::cerr << "[OsmAnd Atlas][style-load] selected-style-file-entry"
-                      << " name=" << byFileKey->name.toStdString()
-                      << " title=" << byFileKey->title.toStdString()
-                      << " parent=" << byFileKey->parentName.toStdString()
-                      << std::endl;
-        if (byXmlTitle)
-            std::cerr << "[OsmAnd Atlas][style-load] selected-style-title-entry"
-                      << " name=" << byXmlTitle->name.toStdString()
-                      << " title=" << byXmlTitle->title.toStdString()
-                      << " parent=" << byXmlTitle->parentName.toStdString()
+        if (selectedStyle)
+            std::cerr << "[OsmAnd Atlas][style-load] selected-style-entry"
+                      << " name=" << selectedStyle->name.toStdString()
+                      << " title=" << selectedStyle->title.toStdString()
+                      << " parent=" << selectedStyle->parentName.toStdString()
                       << std::endl;
     }
-
-    _obfsCollection = std::make_shared<OsmAnd::ObfsCollection>();
-    for (const auto& obfPath : _configuration.obfPaths)
-        _obfsCollection->addFile(obfPath);
-
-    // The rendering style's internal name is not guaranteed to match its
-    // filename (for example, skimap.render.xml declares name="Ski-map").
-    // Resolve the style by the XML header name, not QFileInfo::baseName().
-    _styleName = QFileInfo(_configuration.stylePath).baseName();
-    QFile styleFile(_configuration.stylePath);
-    if (styleFile.open(QIODevice::ReadOnly | QIODevice::Text))
-    {
-        QXmlStreamReader styleXml(&styleFile);
-        while (!styleXml.atEnd() && !styleXml.isStartElement())
-            styleXml.readNext();
-        if (styleXml.isStartElement()
-            && styleXml.name() == QStringLiteral("renderingStyle"))
-        {
-            const auto declaredName = styleXml.attributes().value(QStringLiteral("name")).toString().trimmed();
-            if (!declaredName.isEmpty())
-                _styleName = declaredName;
-        }
-    }
-    _locale = QLocale::system().name().section(QLatin1Char('_'), 0, 0).toLower();
-    if (_locale.isEmpty())
-        _locale = QStringLiteral("en");
-
-    if (debugStyleLoad)
-        std::cerr << "[OsmAnd Atlas][style-load] selected-style-key"
-                  << " declaredOrFallbackName=" << _styleName.toStdString()
-                  << " filenameStem=" << QFileInfo(_configuration.stylePath).completeBaseName().toStdString()
-                  << " locale=" << _locale.toStdString()
-                  << " resourcesReady=true"
-                  << std::endl;
 
     _resourcesReady = true;
     return true;
