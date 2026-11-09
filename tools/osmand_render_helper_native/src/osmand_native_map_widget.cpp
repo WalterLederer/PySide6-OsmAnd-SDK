@@ -810,8 +810,8 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
 
     if (debugStyleLoad)
         std::cerr << "[OsmAnd Atlas][style-load] selected-style-key"
-                  << " declaredOrFallbackName=" << _styleName.toStdString()
-                  << " filenameStem=" << QFileInfo(_configuration.stylePath).completeBaseName().toStdString()
+                  << " registeredKey=" << _styleName.toStdString()
+                  << " selectedFile=" << QFileInfo(_configuration.stylePath).fileName().toStdString()
                   << " locale=" << _locale.toStdString()
                   << " resourcesReady=true"
                   << std::endl;
