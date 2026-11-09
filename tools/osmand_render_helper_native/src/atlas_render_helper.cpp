@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QElapsedTimer>
 #include <QJsonDocument>
@@ -252,8 +253,7 @@ void writeHillshadeResponse(std::uint32_t requestId, std::uint32_t status, const
 {
     std::array<unsigned char, 24> header{};
     header[0] = 'O'; header[1] = 'S'; header[2] = 'M'; header[3] = 'H';
-    writeU16(*reinterpret_cast<std::array<unsigned char, kHeaderSize>*>(header.data()), 4, kProtocolVersion);
-    // OSMH has a compact 24-byte header; encode all integers explicitly.
+        // OSMH has a compact 24-byte header; encode all integers explicitly.
     header[4] = 1; header[5] = 0;
     header[6] = 24; header[7] = 0;
     for (int i = 0; i < 4; ++i)
