@@ -794,6 +794,53 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
         }
     }
 
+    if (debugStyleLoad)
+    {
+        const auto selectedFileName = QFileInfo(_configuration.stylePath).fileName();
+        QString selectedFileKey = selectedFileName;
+        if (selectedFileKey.endsWith(QStringLiteral(".render.xml"), Qt::CaseInsensitive))
+            selectedFileKey.chop(QStringLiteral(".render.xml").size());
+
+        std::cerr << "[OsmAnd Atlas][style-load] registry-snapshot"
+                  << " selectedFileKey=" << selectedFileKey.toStdString()
+                  << " selectedXmlTitle=" << _styleName.toStdString()
+                  << std::endl;
+
+        const auto registeredStyles = _stylesCollection->getCollection();
+        for (const auto& registeredStyle : registeredStyles)
+        {
+            if (!registeredStyle)
+                continue;
+            std::cerr << "[OsmAnd Atlas][style-load] registered-style"
+                      << " name=" << registeredStyle->name.toStdString()
+                      << " title=" << registeredStyle->title.toStdString()
+                      << " parent=" << registeredStyle->parentName.toStdString()
+                      << " pointer=" << static_cast<const void*>(registeredStyle.get())
+                      << std::endl;
+        }
+
+        const auto byFileKey = _stylesCollection->getStyleByName(selectedFileKey);
+        const auto byXmlTitle = _stylesCollection->getStyleByName(_styleName);
+        std::cerr << "[OsmAnd Atlas][style-load] selected-style-lookup"
+                  << " byFileKey=" << static_cast<bool>(byFileKey)
+                  << " fileKeyPointer=" << static_cast<const void*>(byFileKey.get())
+                  << " byXmlTitle=" << static_cast<bool>(byXmlTitle)
+                  << " xmlTitlePointer=" << static_cast<const void*>(byXmlTitle.get())
+                  << std::endl;
+        if (byFileKey)
+            std::cerr << "[OsmAnd Atlas][style-load] selected-style-file-entry"
+                      << " name=" << byFileKey->name.toStdString()
+                      << " title=" << byFileKey->title.toStdString()
+                      << " parent=" << byFileKey->parentName.toStdString()
+                      << std::endl;
+        if (byXmlTitle)
+            std::cerr << "[OsmAnd Atlas][style-load] selected-style-title-entry"
+                      << " name=" << byXmlTitle->name.toStdString()
+                      << " title=" << byXmlTitle->title.toStdString()
+                      << " parent=" << byXmlTitle->parentName.toStdString()
+                      << std::endl;
+    }
+
     _obfsCollection = std::make_shared<OsmAnd::ObfsCollection>();
     for (const auto& obfPath : _configuration.obfPaths)
         _obfsCollection->addFile(obfPath);
@@ -843,13 +890,25 @@ bool OsmAndNativeMapWidget::ensureRenderer()
     if (!_resourcesReady)
         return false;
 
+    const bool debugStyleLoad = std::getenv("OSMAND_ATLAS_DEBUG_STYLE_LOAD") != nullptr;
+    const auto unresolvedStyle = _stylesCollection->getStyleByName(_styleName);
     const auto mapStyle = _stylesCollection->getResolvedStyleByName(_styleName);
-    if (debugRenderPhases || std::getenv("OSMAND_ATLAS_DEBUG_STYLE_LOAD") != nullptr)
+    if (debugRenderPhases || debugStyleLoad)
+    {
         std::cerr << "[OsmAnd Atlas][style-load] resolve"
                   << " requestedName=" << _styleName.toStdString()
+                  << " registered=" << static_cast<bool>(unresolvedStyle)
+                  << " registeredPointer=" << static_cast<const void*>(unresolvedStyle.get())
                   << " resolved=" << static_cast<bool>(mapStyle)
                   << " resolvedPointer=" << static_cast<const void*>(mapStyle.get())
                   << std::endl;
+        if (unresolvedStyle)
+            std::cerr << "[OsmAnd Atlas][style-load] resolve-entry"
+                      << " name=" << unresolvedStyle->name.toStdString()
+                      << " title=" << unresolvedStyle->title.toStdString()
+                      << " parent=" << unresolvedStyle->parentName.toStdString()
+                      << std::endl;
+    }
     if (!mapStyle)
     {
         _initError = QStringLiteral("Unable to resolve rendering style: %1").arg(_styleName);
