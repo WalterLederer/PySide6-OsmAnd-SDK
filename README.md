@@ -1,4 +1,7 @@
-# 🗺️ PySide6-OsmAnd-SDK
+> **Notice:** This repository was created solely for pull requests and testing purposes. It is not intended for general use, and should not be used as an active or production repository. Please refer to the official repository for the maintained version.
+>
+>
+> # 🗺️ PySide6-OsmAnd-SDK
 > Bring OsmAnd's native offline map stack into modern Qt6 and PySide6 apps — with native widgets, `.obf` rendering, and cross-platform build tooling.
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
