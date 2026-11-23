@@ -991,7 +991,10 @@ void OsmAnd::ObfAddressSectionReader_P::readAddressesByName(
                             auto it = streetGroups.find(ref.cityIndexOffset);
                             if (it != streetGroups.end())
                             {
-                                streetGroups.insert(ref.dataIndexOffset, *it);
+                                // Copy the value before inserting into the same QHash.
+                                // insert() may detach/rehash the container and invalidate the iterator.
+                                const auto streetGroup = it.value();
+                                streetGroups.insert(ref.dataIndexOffset, streetGroup);
                             }
                         }
                         
