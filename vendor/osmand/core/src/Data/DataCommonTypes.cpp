@@ -4,8 +4,8 @@
 
 static const int SHIFT_MULTIPOLYGON_IDS = 43;
 static const int SHIFT_NON_SPLIT_EXISTING_IDS = 41;
-static const uint64_t RELATION_BIT = 1L << (SHIFT_MULTIPOLYGON_IDS - 1); //According IndexPoiCreator SHIFT_MULTIPOLYGON_IDS
-static const uint64_t SPLIT_BIT = 1L << (SHIFT_NON_SPLIT_EXISTING_IDS - 1); //According IndexVectorMapCreator
+static const uint64_t RELATION_BIT = uint64_t{1} << (SHIFT_MULTIPOLYGON_IDS - 1); //According IndexPoiCreator SHIFT_MULTIPOLYGON_IDS
+static const uint64_t SPLIT_BIT = uint64_t{1} << (SHIFT_NON_SPLIT_EXISTING_IDS - 1); //According IndexVectorMapCreator
 static const uint64_t clearBits = RELATION_BIT | SPLIT_BIT;
 static const int DUPLICATE_SPLIT = 5; //According IndexPoiCreator DUPLICATE_SPLIT
 static const int SHIFT_ID = 6;
@@ -62,7 +62,7 @@ OsmAnd::ObfObjectId OsmAnd::ObfObjectId::fromRawId(const uint64_t rawId)
     if (static_cast<int64_t>(rawId) <= 0)
         return ObfObjectId::invalidId();
 
-    ObfObjectId obfObjectId;
+    OsmAnd::ObfObjectId obfObjectId;
     obfObjectId.id = rawId;
     return obfObjectId;
 }
