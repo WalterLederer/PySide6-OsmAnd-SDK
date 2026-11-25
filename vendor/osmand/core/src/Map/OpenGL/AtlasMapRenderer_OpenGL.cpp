@@ -133,7 +133,7 @@ bool OsmAnd::AtlasMapRenderer_OpenGL::doRenderFrame(IMapRenderer_Metrics::Metric
     GL_CHECK_RESULT;
 
     // Set background color
-    glClearColor(currentState.backgroundColor.r, currentState.backgroundColor.g, currentState.backgroundColor.b, 1.0f);
+    glClearColor(currentState.backgroundColor.r, currentState.backgroundColor.g, currentState.backgroundColor.b, qEnvironmentVariableIntValue("OSMAND_ATLAS_TRANSPARENT_BACKGROUND") > 0 ? 0.0f : 1.0f);
     GL_CHECK_RESULT;
 
     // Clear buffers
