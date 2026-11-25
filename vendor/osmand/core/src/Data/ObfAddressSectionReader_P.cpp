@@ -1,4 +1,4 @@
-﻿#include "ObfAddressSectionReader_P.h"
+#include "ObfAddressSectionReader_P.h"
 
 #include "ignore_warnings_on_external_includes.h"
 #include "OBF.pb.h"
@@ -1481,4 +1481,5 @@ void OsmAnd::ObfAddressSectionReader_P::scanAddressesByName(
     ObfReaderUtilities::ensureAllDataWasRead(cis);
     cis->PopLimit(oldLimit);
 }
+
 
