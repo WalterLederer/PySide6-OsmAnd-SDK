@@ -204,6 +204,7 @@ void OsmAnd::ObfAddressSectionReader_P::readCityHeader(
     auto type = ObfAddressStreetGroupSubtype::Unknown;
     QString nativeName;
     QHash<QString, QString> localizedNames;
+    QHash<QString, QString> attributes;
     ObfObjectId id;
     bool autogenerateId = true;
     PointI position31;
@@ -241,6 +242,7 @@ void OsmAnd::ObfAddressSectionReader_P::readCityHeader(
                 outStreetGroup->position31 = position31;
                 outStreetGroup->dataOffset = dataOffset;
                 outStreetGroup->bbox31 = boundaryBbox;
+                outStreetGroup->attributes = attributes;
 
                 return;
             case OBF::CityIndex::kCityTypeFieldNumber:
@@ -276,6 +278,7 @@ void OsmAnd::ObfAddressSectionReader_P::readCityHeader(
                 {
                     QString tg = additionalTags.front();
                     additionalTags.pop_front();
+                    attributes.insert(tg, nm);
                     if (tg.startsWith(QLatin1String("name:")))
                         localizedNames.insert(tg.mid(5), nm);
                 }
